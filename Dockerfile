@@ -38,7 +38,7 @@ COPY . .
 RUN npm run build
 
 # ── Stage 2: Serve ─────────────────────────────────────────────────────────────
-FROM nginx:1.27-alpine AS runner
+FROM nginx:1.29-alpine AS runner
 
 # Remove the default nginx welcome page
 RUN rm -rf /usr/share/nginx/html/*
