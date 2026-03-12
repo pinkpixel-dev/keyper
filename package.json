@@ -142,7 +142,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react-swc": "^4.2.3",
-    "electron": "^33.4.11",
+    "electron": "^41.0.0",
     "electron-builder": "^25.1.8",
     "eslint": "^9.39.3",
     "eslint-plugin-react-hooks": "^7.0.1",
