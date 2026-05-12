@@ -15,7 +15,7 @@
 #   docker compose up -d
 
 # ── Stage 1: Build ─────────────────────────────────────────────────────────────
-FROM node:22-alpine AS builder
+FROM node:26-alpine AS builder
 
 LABEL org.opencontainers.image.title="Keyper"
 LABEL org.opencontainers.image.description="🔐 Self-hosted credential manager with zero-knowledge encryption"
