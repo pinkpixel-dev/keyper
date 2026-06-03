@@ -125,7 +125,7 @@
     "next-themes": "^0.4.6",
     "node-abi": "^4.31.0",
     "react": "^19.2.4",
-    "react-day-picker": "^9.14.0",
+    "react-day-picker": "^10.0.1",
     "react-dom": "^19.2.4",
     "react-hook-form": "^7.71.2",
     "react-resizable-panels": "^4.7.0",
