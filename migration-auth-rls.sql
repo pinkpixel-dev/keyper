@@ -82,122 +82,153 @@ ALTER TABLE categories   ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES auth.
 -- STAGE 1c: CLAIM YOUR EXISTING ROWS
 -- ============================================================================
 --
--- Replace BOTH placeholders, then run. Repeat once per legacy username.
+-- There is exactly ONE thing to edit in this block: paste your account UUID
+-- into target_owner below. Get it from:
 --
---   '00000000-0000-0000-0000-000000000000' -> the UUID from auth.users
---   'self-hosted-user'                     -> the legacy user_id value
+--     SELECT id, email FROM auth.users ORDER BY created_at;
 --
--- Rows left unclaimed become invisible to everyone once Stage 1e applies. That
--- is intentional: this migration fails closed rather than guessing an owner.
+-- By default this claims every row that does not yet have an owner, which is
+-- what you want on a single-user install. If several people share this database,
+-- set only_username to one legacy user_id and run the block once per person.
+--
+-- The block checks the UUID before touching anything, so a wrong or unedited
+-- value stops with a clear message instead of a constraint error.
 
-UPDATE credentials
-SET owner_id = '00000000-0000-0000-0000-000000000000'::uuid
-WHERE user_id = 'self-hosted-user' AND owner_id IS NULL;
+DO $$
+DECLARE
+  -- ⬇⬇⬇  PASTE YOUR ACCOUNT UUID HERE  ⬇⬇⬇
+  target_owner  UUID := '00000000-0000-0000-0000-000000000000';
 
-UPDATE vault_config
-SET owner_id = '00000000-0000-0000-0000-000000000000'::uuid
-WHERE user_id = 'self-hosted-user' AND owner_id IS NULL;
+  -- Leave NULL to claim everything unclaimed. Set to a legacy user_id (for
+  -- example 'jess') only if this database holds several people's vaults.
+  only_username TEXT := NULL;
 
-UPDATE categories
-SET owner_id = '00000000-0000-0000-0000-000000000000'::uuid
-WHERE user_id = 'self-hosted-user' AND owner_id IS NULL;
+  n_credentials INT;
+  n_vault       INT;
+  n_categories  INT;
+  owner_email   TEXT;
+BEGIN
+  IF target_owner = '00000000-0000-0000-0000-000000000000'::uuid THEN
+    RAISE EXCEPTION
+      E'\n\nThe account UUID has not been filled in yet.\n\n'
+      'Run this to find it:\n'
+      '    SELECT id, email FROM auth.users ORDER BY created_at;\n\n'
+      'Then paste the id into target_owner at the top of this block.\n'
+      'If the query returns nothing, create an account first under\n'
+      'Authentication > Users > Add user.\n';
+  END IF;
+
+  SELECT email INTO owner_email FROM auth.users WHERE id = target_owner;
+
+  IF owner_email IS NULL THEN
+    RAISE EXCEPTION
+      E'\n\nNo account exists with id %.\n\n'
+      'Check the value against:\n'
+      '    SELECT id, email FROM auth.users ORDER BY created_at;\n\n'
+      'Nothing has been changed.\n', target_owner;
+  END IF;
+
+  UPDATE credentials SET owner_id = target_owner
+   WHERE owner_id IS NULL
+     AND (only_username IS NULL OR user_id = only_username);
+  GET DIAGNOSTICS n_credentials = ROW_COUNT;
+
+  UPDATE vault_config SET owner_id = target_owner
+   WHERE owner_id IS NULL
+     AND (only_username IS NULL OR user_id = only_username);
+  GET DIAGNOSTICS n_vault = ROW_COUNT;
+
+  UPDATE categories SET owner_id = target_owner
+   WHERE owner_id IS NULL
+     AND (only_username IS NULL OR user_id = only_username);
+  GET DIAGNOSTICS n_categories = ROW_COUNT;
+
+  RAISE NOTICE 'Assigned to % : % credential(s), % vault config(s), % category/ies.',
+    owner_email, n_credentials, n_vault, n_categories;
+END $$;
 
 
 -- ============================================================================
 -- STAGE 1d: VERIFY NOTHING WAS LEFT BEHIND
 -- ============================================================================
 --
--- Every count here must be 0 before you continue. A non-zero count means those
--- rows have no owner and will be unreachable after the next step.
+-- Every count here should be 0. A non-zero count means Stage 1c did not match
+-- those rows, usually because they use a different legacy username.
 
-SELECT 'credentials'  AS table_name, COUNT(*) AS unclaimed FROM credentials  WHERE owner_id IS NULL
+SELECT 'credentials'  AS table_name, user_id, COUNT(*) AS unclaimed FROM credentials  WHERE owner_id IS NULL GROUP BY 1,2
 UNION ALL
-SELECT 'vault_config' AS table_name, COUNT(*) AS unclaimed FROM vault_config WHERE owner_id IS NULL
+SELECT 'vault_config' AS table_name, user_id, COUNT(*) AS unclaimed FROM vault_config WHERE owner_id IS NULL GROUP BY 1,2
 UNION ALL
-SELECT 'categories'   AS table_name, COUNT(*) AS unclaimed FROM categories   WHERE owner_id IS NULL;
+SELECT 'categories'   AS table_name, user_id, COUNT(*) AS unclaimed FROM categories   WHERE owner_id IS NULL GROUP BY 1,2;
 
--- Once all three read 0, lock the columns down.
-ALTER TABLE credentials  ALTER COLUMN owner_id SET NOT NULL;
-ALTER TABLE vault_config ALTER COLUMN owner_id SET NOT NULL;
-ALTER TABLE categories   ALTER COLUMN owner_id SET NOT NULL;
+-- Same check, enforced. This stops here with a readable message rather than
+-- letting the SET NOT NULL below fail with "contains null values".
+-- The guard and the policy swap live in ONE block on purpose. A bare guard is
+-- not enough: psql and some SQL consoles carry on to the next statement after an
+-- error, which would apply the policies anyway. Inside a single block, a failed
+-- check means none of the statements below it run.
 
-ALTER TABLE credentials  ALTER COLUMN owner_id SET DEFAULT auth.uid();
-ALTER TABLE vault_config ALTER COLUMN owner_id SET DEFAULT auth.uid();
-ALTER TABLE categories   ALTER COLUMN owner_id SET DEFAULT auth.uid();
-
--- One vault per account, replacing the old per-username constraint.
-ALTER TABLE vault_config DROP CONSTRAINT IF EXISTS vault_config_user_id_key;
-ALTER TABLE vault_config ADD  CONSTRAINT vault_config_owner_id_key UNIQUE (owner_id);
-
-ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_user_id_name_key;
-ALTER TABLE categories ADD  CONSTRAINT categories_owner_id_name_key UNIQUE (owner_id, name);
-
-CREATE INDEX IF NOT EXISTS idx_credentials_owner_id  ON credentials(owner_id);
-CREATE INDEX IF NOT EXISTS idx_vault_config_owner_id ON vault_config(owner_id);
-CREATE INDEX IF NOT EXISTS idx_categories_owner_id   ON categories(owner_id);
-
-
--- ============================================================================
--- STAGE 1e: REPLACE THE POLICIES
--- ============================================================================
-
-ALTER TABLE credentials  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE vault_config ENABLE ROW LEVEL SECURITY;
-ALTER TABLE categories   ENABLE ROW LEVEL SECURITY;
-
--- Drop everything currently attached, by name, whatever it is called.
 DO $$
 DECLARE
-    r RECORD;
+  unclaimed INT;
+  tbl       TEXT;
 BEGIN
-    FOR r IN (
-        SELECT policyname, tablename
-        FROM pg_policies
-        WHERE schemaname = 'public'
-          AND tablename IN ('credentials', 'vault_config', 'categories')
-    )
-    LOOP
-        EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', r.policyname, r.tablename);
-    END LOOP;
+  SELECT (SELECT COUNT(*) FROM credentials  WHERE owner_id IS NULL)
+       + (SELECT COUNT(*) FROM vault_config WHERE owner_id IS NULL)
+       + (SELECT COUNT(*) FROM categories   WHERE owner_id IS NULL)
+    INTO unclaimed;
+
+  IF unclaimed > 0 THEN
+    RAISE EXCEPTION
+      E'\n\nSTOPPED: % row(s) still have no owner.\n\n'
+      'The new policies match rows on owner_id, so an unowned row would become\n'
+      'invisible to the app even though it is still on disk. Nothing has been\n'
+      'changed.\n\n'
+      'Re-run Stage 1c with only_username left as NULL to claim everything.\n', unclaimed;
+  END IF;
+
+  FOREACH tbl IN ARRAY ARRAY['credentials', 'vault_config', 'categories'] LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', tbl);
+
+    -- Clear whatever is currently attached, whatever it happens to be called.
+    EXECUTE (
+      SELECT COALESCE(string_agg(format('DROP POLICY IF EXISTS %I ON public.%I;', policyname, tbl), ' '), '')
+      FROM pg_policies WHERE schemaname = 'public' AND tablename = tbl
+    );
+
+    -- TO authenticated means an unauthenticated request matches no policy.
+    -- owner_id = auth.uid() keeps each account to its own rows. The WITH CHECK
+    -- clauses stop a row being written under, or moved to, another owner.
+    -- auth.uid() sits in a subquery so it is evaluated once per statement.
+    EXECUTE format($f$
+      CREATE POLICY %I ON public.%I
+        FOR SELECT TO authenticated USING (owner_id = (SELECT auth.uid()));
+      CREATE POLICY %I ON public.%I
+        FOR INSERT TO authenticated WITH CHECK (owner_id = (SELECT auth.uid()));
+      CREATE POLICY %I ON public.%I
+        FOR UPDATE TO authenticated USING (owner_id = (SELECT auth.uid()))
+                                    WITH CHECK (owner_id = (SELECT auth.uid()));
+      CREATE POLICY %I ON public.%I
+        FOR DELETE TO authenticated USING (owner_id = (SELECT auth.uid()));
+    $f$,
+      tbl || '_select_policy', tbl,
+      tbl || '_insert_policy', tbl,
+      tbl || '_update_policy', tbl,
+      tbl || '_delete_policy', tbl
+    );
+  END LOOP;
+
+  -- Inside the block too, for the same reason: revoking anon while the old
+  -- permissive policies were still in place would break the running app without
+  -- the new rules being ready to take over.
+  EXECUTE 'REVOKE ALL ON credentials, vault_config, categories FROM anon';
+  EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON credentials, vault_config, categories TO authenticated';
+
+  RAISE NOTICE 'Policies replaced and anon privileges revoked on all three tables.';
 END $$;
-
--- TO authenticated means the anon key on its own matches no policy at all.
--- owner_id = auth.uid() means an authenticated user reaches only their own rows.
--- The WITH CHECK clauses stop anyone writing or re-assigning a row to another
--- owner. auth.uid() is wrapped in a subquery so it is evaluated once per
--- statement rather than once per row.
-
-CREATE POLICY "credentials_select_policy" ON credentials
-  FOR SELECT TO authenticated USING (owner_id = (SELECT auth.uid()));
-CREATE POLICY "credentials_insert_policy" ON credentials
-  FOR INSERT TO authenticated WITH CHECK (owner_id = (SELECT auth.uid()));
-CREATE POLICY "credentials_update_policy" ON credentials
-  FOR UPDATE TO authenticated USING (owner_id = (SELECT auth.uid())) WITH CHECK (owner_id = (SELECT auth.uid()));
-CREATE POLICY "credentials_delete_policy" ON credentials
-  FOR DELETE TO authenticated USING (owner_id = (SELECT auth.uid()));
-
-CREATE POLICY "vault_config_select_policy" ON vault_config
-  FOR SELECT TO authenticated USING (owner_id = (SELECT auth.uid()));
-CREATE POLICY "vault_config_insert_policy" ON vault_config
-  FOR INSERT TO authenticated WITH CHECK (owner_id = (SELECT auth.uid()));
-CREATE POLICY "vault_config_update_policy" ON vault_config
-  FOR UPDATE TO authenticated USING (owner_id = (SELECT auth.uid())) WITH CHECK (owner_id = (SELECT auth.uid()));
-CREATE POLICY "vault_config_delete_policy" ON vault_config
-  FOR DELETE TO authenticated USING (owner_id = (SELECT auth.uid()));
-
-CREATE POLICY "categories_select_policy" ON categories
-  FOR SELECT TO authenticated USING (owner_id = (SELECT auth.uid()));
-CREATE POLICY "categories_insert_policy" ON categories
-  FOR INSERT TO authenticated WITH CHECK (owner_id = (SELECT auth.uid()));
-CREATE POLICY "categories_update_policy" ON categories
-  FOR UPDATE TO authenticated USING (owner_id = (SELECT auth.uid())) WITH CHECK (owner_id = (SELECT auth.uid()));
-CREATE POLICY "categories_delete_policy" ON categories
-  FOR DELETE TO authenticated USING (owner_id = (SELECT auth.uid()));
 
 -- Strip anon at the grant layer too, so a future policy mistake cannot quietly
 -- reopen the table.
-REVOKE ALL ON credentials, vault_config, categories FROM anon;
-GRANT SELECT, INSERT, UPDATE, DELETE ON credentials, vault_config, categories TO authenticated;
 
 -- get_credential_stats read the credentials table as SECURITY DEFINER, which
 -- bypassed RLS entirely and returned another user's numbers to any caller.

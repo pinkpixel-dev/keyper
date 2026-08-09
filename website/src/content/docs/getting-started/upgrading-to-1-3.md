@@ -67,6 +67,16 @@ Open **Supabase → SQL Editor** and work through `migration-auth-rls.sql` from 
 Keyper repository, in order. Keyper also offers a copy button for it on the
 upgrade screen.
 
+There is **one line to edit**: paste your account UUID into `target_owner` in the
+Stage 1c block. Everything else runs as-is. By default Stage 1c claims every row
+that does not yet have an owner, which is what you want on a single-user install.
+
+If several people share the database, set `only_username` to one legacy username
+and run the block once per person, then continue.
+
+The script checks your UUID before changing anything, so an unedited or wrong
+value stops with a clear message rather than a constraint error.
+
 The script runs in stages, and the order matters:
 
 | Stage | What it does | Where |
@@ -86,9 +96,13 @@ run **after** Keyper has moved the key across in Stage 2. The script includes a
 query to confirm that has happened.
 :::
 
-If Stage 1d reports rows without an owner, that means some rows were not matched
-by the username in Stage 1c. Run Stage 1c again with the right username before
-continuing.
+If Stage 1d reports rows without an owner, some rows were not matched by Stage
+1c. The output shows which usernames they use. Re-run Stage 1c with
+`only_username` left as `NULL` to claim all of them.
+
+The migration will not install the new access rules while any row is unowned,
+because an unowned row would be invisible to the app. It stops instead, and
+leaves your existing setup working.
 
 ## Step 4: Sign in and unlock
 

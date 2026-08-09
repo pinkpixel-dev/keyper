@@ -287,7 +287,8 @@ Your credentials themselves are unchanged and are not re-encrypted.
 3. **Create your account.** Authentication → Users → Add user. Copy the account's
    UUID from the users list.
 4. **Run `migration-auth-rls.sql`** in the SQL editor, following its stages in
-   order. Paste your UUID into the Stage 1c section. Stop when Stage 1 is done.
+   order. There is one line to edit: paste your UUID into `target_owner` in the
+   Stage 1c block. Stop when Stage 1 is done.
 5. **Update Keyper, sign in, and unlock** with your existing master passphrase.
    Keyper moves your vault key to the new format automatically. This is quick,
    since nothing is re-encrypted.
