@@ -551,11 +551,15 @@ over. Write your passphrase down and put it somewhere safe.
 
 ### Getting Help
 
-1. Check the [Self-Hosting Guide](SELF-HOSTING.md)
-2. Review browser console for errors (F12 → Console)
-3. Verify your database provider logs (Supabase dashboard → Logs, or browser DevTools → Console for SQLite errors)
-4. Use the master passphrase reset process above for password issues
-5. Report issues on [GitHub](https://github.com/pinkpixel-dev/keyper/issues)
+1. **Upgrading to 1.3.0?** Start with [MIGRATION.md](MIGRATION.md)
+2. Check the [documentation](https://keyper.icu) or the [Self-Hosting Guide](SELF-HOSTING.md)
+3. Review the browser console for errors (F12 → Console)
+4. Check your database provider logs (Supabase dashboard → Logs, or DevTools → Console for SQLite)
+5. Report bugs and request features on [GitHub](https://github.com/pinkpixel-dev/keyper/issues)
+6. For anything else, email **[support@keyper.icu](mailto:support@keyper.icu)**
+
+> When asking for help, never include your master passphrase, your database
+> connection string, or the contents of your `vault_config` table.
 
 ---
 

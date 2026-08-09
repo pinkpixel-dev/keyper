@@ -75,6 +75,7 @@ export default defineConfig({
 						{ label: 'Source Map', slug: 'reference/source-map' },
 					],
 				},
+				{ label: 'Support', slug: 'support' },
 			],
 		}),
 	],

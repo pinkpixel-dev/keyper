@@ -69,6 +69,24 @@ for reviewing the shipped setup SQL and reporting this privately.
 - **Added** A pre-flight guard in `supabase-setup.sql` that aborts if the database already contains credentials or a vault config, so nobody destroys a live vault by running the fresh-install script instead of the migration.
 - **Changed** The un-migrated case previously surfaced as "Could not reach your vault", which reads like data loss and invites exactly the wrong reaction.
 
+### ⚙️ Settings
+
+- **Removed** The "Reset Master Passphrase" instructions, which walked users through generating a bcrypt hash on a third-party website and pasting it into `vault_config.bcrypt_hash`. That flow only worked because the vault key was stored separately in usable form, so it was a way around the encryption rather than a feature beside it. It also meant typing a new passphrase into someone else's web page.
+- **Added** A real **Change Master Passphrase** form in its place. It re-wraps the same vault key, so nothing is re-encrypted and every credential keeps working. Requires the current passphrase.
+- **Added** A **Start over** panel that is honest about the alternative: a forgotten passphrase cannot be recovered, and the only option is deleting the vault. Requires typing a confirmation phrase.
+- **Removed** The "Existing Database Update Script" section, which applied a credential-type change from several versions back and only added confusion next to the 1.3.0 migration.
+- **Added** An **About** tab with the version, links to the website, docs, security model, GitHub, issues and changelog, plus the support email.
+- **Fixed** The version in Settings was hardcoded as `0.1.0`. It now comes from `package.json` through the new `src/lib/app-info.ts`, so there is one place it is set.
+- **Fixed** System Information described a bcrypt-only architecture with user-controlled reset, and linked to `docs/EMERGENCY_PASSPHRASE_RESET.md`, which does not exist. It now reports what the app is actually doing and links to the security model.
+- **Fixed** User Management still said emergency resets work through each user's bcrypt hash.
+- **Changed** `DashboardSettings.tsx` split into focused cards under `src/components/dashboard/settings/`, taking it from 569 lines to under 300.
+
+### 📮 Support
+
+- **Added** `support@keyper.icu` as the support address, surfaced in the app's About tab, the README, and a new Support page on the docs site.
+- **Added** A Support page covering where to ask, what to include, and an explicit list of things never to send: master passphrase, account password, connection strings, service role keys, or `vault_config` contents.
+- **Changed** The package description no longer advertises "emergency recovery", which no longer exists.
+
 ### ⚠️ Breaking Changes
 
 - **Supabase users need to enable the Email auth provider** and create an account. The anon key alone no longer opens a vault.
