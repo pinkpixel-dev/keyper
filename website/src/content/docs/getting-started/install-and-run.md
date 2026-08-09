@@ -11,29 +11,29 @@ Current published installer links are available for Windows and Linux.
 
 | Platform              | Package              | Download                                                                                             |
 | --------------------- | -------------------- | ---------------------------------------------------------------------------------------------------- |
-| Windows               | NSIS installer       | [Keyper.Setup.v1.2.2-win-x64.exe](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper%20Setup%20v1.2.2-win-x64.exe) |
-| Linux                 | AppImage (ARM64)     | [Keyper-1.2.2-arm64.AppImage](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper-1.2.2-arm64.AppImage)   |
-| Linux                 | AppImage (AMD64)     | [Keyper-1.2.2-x86_64.AppImage](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper-1.2.2-x86_64.AppImage)   |
-| Linux (Debian/Ubuntu) | `.deb` (x86_64)      | [keyper_1.2.2_amd64.deb](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/keyper_1.2.2_amd64.deb) |
-| Linux (Debian/Ubuntu) | `.deb` (ARM64)       | [keyper_1.2.2_arm64.deb](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/keyper_1.2.2_arm64.deb) |
+| Windows               | NSIS installer       | [Keyper.Setup.v1.3.0-win-x64.exe](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper%20Setup%20v1.3.0-win-x64.exe) |
+| Linux                 | AppImage (ARM64)     | [Keyper-1.3.0-arm64.AppImage](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper-1.3.0-arm64.AppImage)   |
+| Linux                 | AppImage (AMD64)     | [Keyper-1.3.0-x86_64.AppImage](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper-1.3.0-x86_64.AppImage)   |
+| Linux (Debian/Ubuntu) | `.deb` (x86_64)      | [keyper_1.3.0_amd64.deb](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/keyper_1.3.0_amd64.deb) |
+| Linux (Debian/Ubuntu) | `.deb` (ARM64)       | [keyper_1.3.0_arm64.deb](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/keyper_1.3.0_arm64.deb) |
 
 **Windows quick start:**
 
-1. Download [Keyper.Setup.v1.2.2-win-x64.exe](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper.Setup.v1.2.2-win-x64.exe).
+1. Download [Keyper.Setup.v1.3.0-win-x64.exe](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper.Setup.v1.3.0-win-x64.exe).
 2. Run the installer and follow the setup wizard.
 3. Launch Keyper from the Start menu or desktop shortcut.
 
 **Linux AppImage quick start:**
 
 ```bash
-chmod +x Keyper-1.2.2-x86_64.AppImage
-./Keyper-1.2.2-x86_64.AppImage
+chmod +x Keyper-1.3.0-x86_64.AppImage
+./Keyper-1.3.0-x86_64.AppImage
 ```
 
 **Linux .deb quick start:**
 
 ```bash
-sudo dpkg -i keyper_1.2.2_amd64.deb
+sudo dpkg -i keyper_1.3.0_amd64.deb
 keyper   # or launch from your applications menu
 ```
 
