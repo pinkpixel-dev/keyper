@@ -1,63 +1,77 @@
 /**
- * VaultManager - High-level vault management service
- * 
- * Integrates SecureVault with VaultStorage to provide a complete
- * Bitwarden-style encryption system with proper passphrase validation.
- * 
+ * VaultManager - high-level vault operations
+ *
+ * Sits between the UI and the crypto/storage layers. Owns the lifecycle:
+ * create a vault, unlock it, change the passphrase, migrate a legacy vault.
+ *
  * Made with ❤️ by Pink Pixel ✨
  */
 
 import { secureVault } from './SecureVault';
-import { getVaultConfig, saveVaultConfig, deleteVaultConfig, isVaultInitialized, isLegacyVaultConfig, isNewVaultConfig } from './VaultStorage';
+import {
+  getVaultConfig,
+  saveVaultConfig,
+  deleteVaultConfig,
+  replaceRawDEKWithWrapped,
+  isVaultInitialized,
+  isWrappedVaultConfig,
+  isLegacyRawVaultConfig,
+} from './VaultStorage';
 import { supabase } from '@/integrations/supabase/client';
-import { getCurrentUsername, saveCurrentUsername } from '@/integrations/supabase/client';
+import { getOwnerId, ownershipFields } from '@/integrations/supabase/auth';
 import type { VaultEvent } from './SecureVault';
 import type { SecretBlobV1 } from '@/crypto/types';
 import { CryptoError, CryptoErrorType } from '@/crypto/types';
-import { hashPassphrase, verifyPassphrase } from '@/crypto/bcrypt';
 
 export class VaultManager {
   private initialized = false;
-  private initializedUserId: string | null = null;
+  private initializedOwnerId: string | null = null;
+
+  /** Set when the loaded vault still stores its key raw and needs migrating. */
+  private pendingRawDEK: string | null = null;
 
   /**
-   * Initialize vault manager - loads existing vault config if available
+   * Load the vault config for the signed-in account.
+   *
+   * This never unlocks anything. Loading a wrapped key tells us a vault exists;
+   * only a correct passphrase can open it.
    */
   async initialize(): Promise<void> {
-    const currentUsername = getCurrentUsername();
+    const ownerId = await getOwnerId();
 
-    if (this.initialized && this.initializedUserId === currentUsername) {
+    if (this.initialized && this.initializedOwnerId === ownerId) {
+      return;
+    }
+
+    // Switching accounts must not leave the previous account's key in memory.
+    if (this.initializedOwnerId && this.initializedOwnerId !== ownerId) {
+      secureVault.resetConfiguration();
+      this.pendingRawDEK = null;
+    }
+
+    if (!ownerId) {
+      this.initialized = false;
+      this.initializedOwnerId = null;
       return;
     }
 
     try {
-      if (this.initializedUserId && this.initializedUserId !== currentUsername) {
-        secureVault.resetConfiguration();
-      }
+      const config = await getVaultConfig();
+      this.pendingRawDEK = null;
 
-      // Check if vault is initialized in database
-      const vaultInitialized = await isVaultInitialized();
-      
-      if (vaultInitialized) {
-        // Load vault configuration from database
-        const config = await getVaultConfig();
-        if (config) {
-          if (isNewVaultConfig(config)) {
-            // New format: raw_dek + bcrypt_hash
-            console.log('🔧 Initializing with new vault format (raw DEK)');
-            await secureVault.initializeWithRawDEK(config.raw_dek);
-          } else if (isLegacyVaultConfig(config)) {
-            // Legacy format: wrapped_dek
-            console.log('🔧 Initializing with legacy vault format (wrapped DEK)');
-            await secureVault.initializeWithWrappedDEK(config.wrapped_dek);
-          }
-        }
+      if (config && isWrappedVaultConfig(config)) {
+        await secureVault.initializeWithWrappedDEK(config.wrapped_dek);
+      } else if (config && isLegacyRawVaultConfig(config)) {
+        // Hold the raw key aside. It is migrated on the next successful unlock,
+        // which is the first moment we actually have the passphrase.
+        console.warn('⚠️ Vault still stores its key raw; it will be migrated on unlock');
+        this.pendingRawDEK = config.raw_dek;
       } else {
         secureVault.resetConfiguration();
       }
 
       this.initialized = true;
-      this.initializedUserId = currentUsername;
+      this.initializedOwnerId = ownerId;
     } catch (error) {
       console.error('Error initializing vault manager:', error);
       throw error;
@@ -65,260 +79,179 @@ export class VaultManager {
   }
 
   /**
-   * Check if this is a first-time user (no vault configured)
+   * True when the signed-in account has no vault yet.
    */
   async isFirstTimeUser(): Promise<boolean> {
     try {
       await this.initialize();
-      
-      // Check only database for first-time user status
-      const hasVaultConfig = await isVaultInitialized();
-      
-      // Treat lack of vault config as first-time user
-      return !hasVaultConfig;
+      return !(await isVaultInitialized());
     } catch (error) {
       console.error('Error checking first-time user status:', error);
-      // If we can't check database, assume first-time user for safety
-      return true;
-    }
-  }
-
-  /**
-   * Create new vault with master passphrase (first-time setup)
-   */
-  async createVault(masterPassphrase: string): Promise<void> {
-    await this.initialize();
-
-    try {
-      // Create bcrypt hash of master passphrase for secure reset
-      const bcryptHash = await hashPassphrase(masterPassphrase);
-      
-      // Create new vault with fresh DEK (no passphrase needed for DEK creation)
-      const rawDEK = await secureVault.createNewVault();
-      
-      // Save raw DEK and bcrypt hash to database
-      await saveVaultConfig(rawDEK, bcryptHash);
-      
-    } catch (error) {
-      console.error('Error creating vault:', error);
+      // Do NOT assume first-time on error. Saying "you're new" to someone whose
+      // vault simply failed to load invites them to overwrite real data.
       throw error;
     }
   }
 
   /**
-   * Unlock existing vault with master passphrase
+   * Whether the loaded vault predates wrapped key storage.
+   */
+  hasPendingMigration(): boolean {
+    return this.pendingRawDEK !== null;
+  }
+
+  /**
+   * Create a vault for the signed-in account and leave it unlocked.
+   */
+  async createVault(masterPassphrase: string): Promise<void> {
+    await this.initialize();
+
+    if (await isVaultInitialized()) {
+      throw new Error('A vault already exists for this account.');
+    }
+
+    const wrapped = await secureVault.createNewVault(masterPassphrase);
+    await saveVaultConfig(wrapped);
+    await this.createDefaultCategories();
+  }
+
+  /**
+   * Unlock the vault with the master passphrase.
+   *
+   * If the vault still stores its key raw, this is also where it gets migrated:
+   * the passphrase is only available at unlock time, and we need it to wrap the
+   * key. The DEK is unchanged, so nothing is re-encrypted.
    */
   async unlockVault(masterPassphrase: string): Promise<void> {
     await this.initialize();
 
     try {
-      // Get vault config
-      const config = await getVaultConfig();
-      if (!config) {
+      if (this.pendingRawDEK) {
+        const wrapped = await secureVault.migrateFromRawDEK(this.pendingRawDEK, masterPassphrase);
+        await replaceRawDEKWithWrapped(wrapped);
+        this.pendingRawDEK = null;
+        console.log('✅ Vault migrated to wrapped key storage');
+        return;
+      }
+
+      if (!secureVault.getWrappedDEK()) {
         throw new CryptoError(
           CryptoErrorType.VAULT_NOT_INITIALIZED,
-          'Vault not initialized. Please set up encryption first.'
+          'Vault not initialized. Please set up encryption first.',
         );
       }
 
-      if (isNewVaultConfig(config)) {
-        // New format: use bcrypt verification only
-        console.log('🔓 Unlocking new format vault (bcrypt-only)');
-        
-        const isValidPassphrase = await verifyPassphrase(masterPassphrase, config.bcrypt_hash);
-        if (!isValidPassphrase) {
-          throw new CryptoError(
-            CryptoErrorType.INVALID_PASSPHRASE,
-            'Invalid master passphrase. Please try again.'
-          );
-        }
-        
-        // Passphrase is valid, unlock vault with stored DEK
-        await secureVault.unlockWithStoredDEK();
-        
-      } else if (isLegacyVaultConfig(config)) {
-        // Legacy format: use the old wrapped DEK system
-        console.log('🔓 Unlocking legacy format vault (wrapped DEK)');
-        
-        // For legacy vaults, use the original unlock method
-        await secureVault.unlock(masterPassphrase);
-      } else {
-        throw new CryptoError(
-          CryptoErrorType.VAULT_NOT_INITIALIZED,
-          'Invalid vault configuration found.'
-        );
-      }
-      
+      await secureVault.unlock(masterPassphrase);
     } catch (error) {
-      console.error('Error unlocking vault:', error);
-      
-      // Provide user-friendly error messages
       if (error instanceof CryptoError) {
         if (error.type === CryptoErrorType.INVALID_PASSPHRASE) {
           throw new Error('Invalid master passphrase. Please try again.');
-        } else if (error.type === CryptoErrorType.VAULT_NOT_INITIALIZED) {
+        }
+        if (error.type === CryptoErrorType.VAULT_NOT_INITIALIZED) {
           throw new Error('Vault not initialized. Please set up encryption first.');
         }
       }
-      
       throw error;
     }
   }
 
   /**
-   * Test if a passphrase is correct without unlocking
+   * Change the master passphrase.
+   *
+   * Re-wraps the same DEK, so existing credentials stay readable and nothing is
+   * re-encrypted. Requires the current passphrase; there is no way to change it
+   * without one, by design.
    */
-  async testPassphrase(passphrase: string): Promise<boolean> {
+  async changePassphrase(currentPassphrase: string, newPassphrase: string): Promise<void> {
     await this.initialize();
-    
-    try {
-      // Get vault config
-      const config = await getVaultConfig();
-      if (!config) {
-        return false;
-      }
 
-      if (isNewVaultConfig(config)) {
-        // New format: test against bcrypt hash
-        return await verifyPassphrase(passphrase, config.bcrypt_hash);
-      } else if (isLegacyVaultConfig(config)) {
-        // Legacy format: test against wrapped DEK (if bcrypt_hash exists, prefer it)
-        if (config.bcrypt_hash) {
-          return await verifyPassphrase(passphrase, config.bcrypt_hash);
-        } else {
-          // Fall back to testing wrapped DEK decryption
-          return await secureVault.testPassphrase(passphrase);
-        }
-      }
-      
-      return false;
-      
+    if (this.pendingRawDEK) {
+      throw new Error('Unlock your vault once to finish migrating it before changing your passphrase.');
+    }
+
+    try {
+      const rewrapped = await secureVault.changePassphrase(currentPassphrase, newPassphrase);
+      await saveVaultConfig(rewrapped);
     } catch (error) {
-      console.error('Error testing passphrase:', error);
-      return false;
+      if (error instanceof CryptoError && error.type === CryptoErrorType.INVALID_PASSPHRASE) {
+        throw new Error('Current master passphrase is incorrect.');
+      }
+      throw error;
     }
   }
 
   /**
-   * Lock the vault
+   * Check a passphrase without unlocking.
    */
+  async testPassphrase(passphrase: string): Promise<boolean> {
+    await this.initialize();
+    return secureVault.testPassphrase(passphrase);
+  }
+
   lockVault(): void {
     secureVault.lock();
   }
 
-  /**
-   * Check if vault is unlocked
-   */
   isUnlocked(): boolean {
     return secureVault.isUnlocked();
   }
 
-  /**
-   * Encrypt data
-   */
   async encrypt(plaintext: string): Promise<SecretBlobV1> {
-    return await secureVault.encrypt(plaintext);
+    return secureVault.encrypt(plaintext);
   }
 
-  /**
-   * Decrypt data
-   */
   async decrypt(blob: SecretBlobV1): Promise<string> {
-    return await secureVault.decrypt(blob);
+    return secureVault.decrypt(blob);
   }
 
   /**
-   * Reset vault (delete all vault data)
+   * Delete the vault key.
+   *
+   * This is destructive and unrecoverable: without the wrapped key, existing
+   * credential rows can never be decrypted again. Callers must confirm first.
    */
   async resetVault(): Promise<void> {
-    try {
-      // Lock vault first
-      secureVault.resetConfiguration();
-      
-      // Delete vault config from database
-      await deleteVaultConfig();
-      
-      // Reset initialization flag
-      this.initialized = false;
-      this.initializedUserId = null;
-      
-    } catch (error) {
-      console.error('Error resetting vault:', error);
-      throw error;
-    }
+    secureVault.resetConfiguration();
+    await deleteVaultConfig();
+
+    this.pendingRawDEK = null;
+    this.initialized = false;
+    this.initializedOwnerId = null;
   }
 
   /**
-   * Add event listener
+   * Drop all in-memory vault state, e.g. on sign-out or account switch.
    */
+  clearSession(): void {
+    secureVault.resetConfiguration();
+    this.pendingRawDEK = null;
+    this.initialized = false;
+    this.initializedOwnerId = null;
+  }
+
   addEventListener(listener: (event: VaultEvent) => void): void {
     secureVault.addEventListener(listener);
   }
 
-  /**
-   * Remove event listener
-   */
   removeEventListener(listener: (event: VaultEvent) => void): void {
     secureVault.removeEventListener(listener);
   }
 
-  /**
-   * Set auto-lock timeout
-   */
   setAutoLockTimeout(timeoutMs: number): void {
     secureVault.setAutoLockTimeout(timeoutMs);
   }
 
-  /**
-   * Get time until auto-lock
-   */
   getTimeUntilAutoLock(): number {
     return secureVault.getTimeUntilAutoLock();
   }
 
   /**
-   * Register a new user with their own encrypted vault
-   * This is a self-service registration - no admin required
+   * Seed default categories for a newly created vault.
+   *
+   * Best effort. Categories are convenience, not data integrity, so a failure
+   * here must not block vault creation.
    */
-  async registerNewUser(username: string, passphrase: string): Promise<void> {
-    try {
-      const normalizedUsername = username.trim();
-
-      // 1. Check if username already exists
-      const { data: existing, error: checkError } = await supabase
-        .from('vault_config')
-        .select('user_id')
-        .eq('user_id', normalizedUsername)
-        .limit(1);
-
-      if (checkError) {
-        throw checkError;
-      }
-
-      if (Array.isArray(existing) && existing.length > 0) {
-        throw new Error('Username already exists. Please choose a different username.');
-      }
-
-      // 2. Set the username in localStorage (this will be used by createVault)
-      this.switchUserContext(normalizedUsername);
-
-      // 3. Create new vault for this user (uses existing createVault method)
-      await this.createVault(passphrase);
-
-      // 4. Create default categories for new user
-      await this.createDefaultCategories(normalizedUsername);
-
-      console.log('✅ New user registered successfully:', normalizedUsername);
-    } catch (error) {
-      console.error('❌ User registration failed:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Create default categories for a new user
-   */
-  private async createDefaultCategories(username: string): Promise<void> {
+  private async createDefaultCategories(): Promise<void> {
     const defaultCategories = [
       { name: 'Development', color: '#3b82f6', icon: 'code', description: 'Development tools and APIs' },
       { name: 'Personal', color: '#10b981', icon: 'user', description: 'Personal accounts and services' },
@@ -326,70 +259,17 @@ export class VaultManager {
       { name: 'Social Media', color: '#ec4899', icon: 'users', description: 'Social media accounts' },
       { name: 'Finance', color: '#06b6d4', icon: 'credit-card', description: 'Banking and financial services' },
       { name: 'Cloud Services', color: '#8b5cf6', icon: 'cloud', description: 'Cloud platforms and services' },
-      { name: 'Security', color: '#ef4444', icon: 'shield', description: 'Security tools and certificates' }
+      { name: 'Security', color: '#ef4444', icon: 'shield', description: 'Security tools and certificates' },
     ];
 
     try {
+      const ownership = await ownershipFields();
+
       for (const category of defaultCategories) {
-        await supabase.from('categories').insert({
-          user_id: username,
-          ...category
-        });
+        await supabase.from('categories').insert({ ...ownership, ...category });
       }
-      console.log('✅ Default categories created for user:', username);
     } catch (error) {
-      console.error('⚠️ Error creating default categories:', error);
-      // Don't throw - categories are nice to have but not critical
-    }
-  }
-
-  /**
-   * Switch the active in-browser user context and clear any cached vault state.
-   */
-  switchUserContext(username: string): void {
-    saveCurrentUsername(username);
-    secureVault.resetConfiguration();
-    this.initialized = false;
-    this.initializedUserId = null;
-  }
-
-  /**
-   * Diagnostic method to check database connectivity and table existence
-   */
-  async debugDatabase(): Promise<void> {
-    try {
-      console.log('🔧 Running database diagnostics...');
-      
-      // Test basic connectivity
-      console.log('📡 Testing Supabase connectivity...');
-      const { data: testData, error: testError } = await supabase
-        .from('credentials')
-        .select('count')
-        .limit(1);
-      
-      if (testError) {
-        console.error('❌ Credentials table test failed:', testError);
-      } else {
-        console.log('✅ Credentials table accessible');
-      }
-      
-      // Test vault_config table specifically
-      console.log('🗄️ Testing vault_config table...');
-      const { data: vaultData, error: vaultError } = await supabase
-        .from('vault_config')
-        .select('*')
-        .limit(1);
-        
-      if (vaultError) {
-        console.error('❌ Vault config table test failed:', vaultError);
-        console.log('💡 This suggests the vault_config table may not exist in your database');
-        console.log('📝 Please run the updated SQL setup script to create the vault_config table');
-      } else {
-        console.log('✅ Vault config table accessible');
-      }
-      
-    } catch (error) {
-      console.error('💥 Database diagnostic failed:', error);
+      console.error('⚠️ Could not create default categories:', error);
     }
   }
 }

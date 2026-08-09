@@ -20,7 +20,8 @@ import {
 import { Badge} from '@/components/ui/badge';
 import { useToast} from '@/hooks/use-toast';
 import { useEncryption} from '@/hooks/useVault';
-import { supabase, getCurrentUsername} from '@/integrations/supabase/client';
+import { supabase} from '@/integrations/supabase/client';
+import { ownershipFields} from '@/integrations/supabase/auth';
 import { X, Plus, Upload, FileText, Trash2} from 'lucide-react';
 import { Checkbox} from '@/components/ui/checkbox';
 import { Category} from '../SelfHostedDashboard';
@@ -159,7 +160,7 @@ export const AddCredentialModal = ({
 
  setLoading(true);
  try {
- const currentUsername = getCurrentUsername();
+ const ownership = await ownershipFields();
  const secretsByType = (() => {
  switch (formData.credential_type) {
  case 'login':
@@ -189,7 +190,7 @@ export const AddCredentialModal = ({
  const { secret_blob, encrypted_at} = await encryptCredential(secretsByType);
 
  const { error} = await supabase.from('credentials').insert({
- user_id: currentUsername,
+ ...ownership,
  title: formData.title.trim(),
  description: formData.description.trim() || null,
  credential_type: formData.credential_type,

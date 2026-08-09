@@ -84,23 +84,26 @@ Scroll down to see other installation options.
 
 ### 🛡️ **Enterprise-Grade Security**
 
-- 🔒 **Row Level Security (RLS)** - Database-level isolation
-- 🔐 **End-to-End Encryption** - Client-side encryption, zero-knowledge architecture
-- 👤 **Multi-User Support** - Self-service registration, account switching, and per-user vault isolation
+- 🔒 **Row Level Security (RLS)** - Every policy is scoped to `TO authenticated` and `owner_id = auth.uid()`, so the anon key on its own reads nothing
+- 🔐 **End-to-End Encryption** - AES-256-GCM under a key that only your master passphrase can unwrap
+- 👤 **Multi-User Support** - Real accounts via Supabase Auth, with per-account vault isolation enforced by the database
 - 🌐 **Secure Connections** - HTTPS/TLS encryption
 - 🏠 **Self-Hosted** - Complete control over your data
 
+> **What is not encrypted:** only the secret itself (`secret_blob`) is encrypted.
+> Titles, usernames, URLs, notes, tags and categories are stored as plaintext, so
+> anyone who can read your rows learns which services you use. Treat account
+> access as vault access. See [Security model](#security-model) for the details.
+
 ### 🔐 **Advanced Encryption Features**
 
-- **Zero-Knowledge Architecture** - All encryption happens client-side
+- **Passphrase-Wrapped Vault Key** - The key that decrypts your secrets is stored only encrypted under your master passphrase, so a full database dump does not decrypt anything
 - **AES-256-GCM Encryption** - Industry-standard authenticated encryption
 - **Argon2id Key Derivation** - Memory-hard, ASIC-resistant (with PBKDF2 fallback)
 - **Auto-Lock Protection** - 15-minute inactivity timeout with activity detection
-- **Simplified Bcrypt Master Passphrase** - Secure bcrypt-only authentication for new users
-- **Backwards Compatibility** - Legacy wrapped DEK system maintained for existing users
-- **User-Controlled Reset** - Secure emergency passphrase reset without admin backdoors
-- **Database-Only Storage** - No localStorage usage except for database config
-- **Professional Security Audit** - EXCELLENT security rating
+- **Authenticated Row Access** - Supabase Auth session required before the database returns any row
+- **Legacy Vault Migration** - Vaults created before v1.3.0 are re-wrapped automatically on first unlock
+- **No Passphrase Recovery** - There is no stored value that can reset your passphrase, by design
 
 ---
 
@@ -145,7 +148,7 @@ Just enter your own Supabase credentials and start managing your encrypted crede
 
 **Demo Usage:**
 
-- ✅ **Completely Secure** - Zero-knowledge architecture means your data never leaves your browser
+- ✅ **Your Keys Stay Yours** - Your master passphrase never leaves your browser, and the vault key is stored only in wrapped form
 - ✅ **Real Functionality** - Full Keyper experience with your own Supabase instance
 - ✅ **No External Signup Required** - Just bring your Supabase URL and anon/publishable key
 - ✅ **In-App User Registration Available** - Create multiple isolated user vaults directly inside Keyper
@@ -253,6 +256,42 @@ npm run electron:build:win     # NSIS installer
 ```
 
 Installers are output to `dist-electron/`.
+
+---
+
+## ⚠️ Upgrading to 1.3.0 from an earlier version
+
+**Read this before you update if you already have a Keyper vault on Supabase.**
+
+1.3.0 fixes a security hole: Row Level Security was enabled but every policy was
+written as `USING (true)` with no `TO` clause, so it applied to everyone
+including the anonymous role. Anyone with a deployed instance's public anon key
+could read, change and delete every row, including the key that decrypts the
+vault. Details in [RELEASE.md](RELEASE.md).
+
+Because the fix changes the schema, **the app will not work against an
+un-migrated database.** Keyper detects this on startup and shows you what to do,
+but here is the short version:
+
+1. **Back up your database.** Supabase → Database → Backups.
+2. **Enable Email auth.** Supabase → Authentication → Providers → Email.
+3. **Create your account.** Authentication → Users → Add user. Copy its UUID.
+4. **Run `migration-auth-rls.sql`**, following its stages in order. Paste your
+   UUID into Stage 1c. Stop after Stage 1.
+5. **Sign in and unlock once** with your existing master passphrase. Keyper
+   re-wraps your vault key automatically; nothing is re-encrypted.
+6. **Then run Stage 3** to drop the old key columns.
+
+> **Do not run `supabase-setup.sql` to upgrade.** It is for fresh installs and
+> now refuses to run on a database that already holds data.
+>
+> **Running Stage 3 before step 5 permanently destroys your vault.** There is no
+> recovery. Do the steps in order.
+
+Two things change for you afterwards: you sign in with an account before
+entering your passphrase, and **the master passphrase can no longer be reset**.
+You can change it if you know it. If you forget it, the data is gone. Write it
+down.
 
 ---
 
@@ -434,37 +473,40 @@ Keyper works as a Progressive Web App for a native app experience!
 - Refresh after user-switch actions if prompted for the cleanest vault context handoff
 - Each user's data is completely separate and encrypted individually
 
-### 🔑 Master Passphrase Reset
+### 🔑 Master Passphrase: change it, you cannot reset it
 
-**Forgot your master passphrase?** No problem! Your encrypted data is completely safe and you can securely reset your passphrase:
+You can **change** your master passphrase from Settings if you know the current
+one. You cannot **reset** it if you have forgotten it. Nobody can, including us,
+and that is the point.
 
-**Important**: It's not possible to _view_ your current master passphrase, but you can _update/change_ it using our secure bcrypt-based reset system.
+**Changing it** re-wraps the same vault key under a key derived from your new
+passphrase. Nothing gets re-encrypted, so it is quick and every existing
+credential keeps working.
 
-📖 **Complete Reset Guide**: For detailed step-by-step instructions, see our comprehensive [Emergency Passphrase Reset Guide](./docs/EMERGENCY_PASSPHRASE_RESET.md)
+**If you forget it**, the vault is gone. There is no recovery path and no
+support request that helps. Your only option is to delete the vault and start
+over. Write your passphrase down and put it somewhere safe.
 
-**Quick Overview:**
+> **This changed in v1.3.0, and the change was deliberate.** Older versions let
+> you regain access by overwriting the `bcrypt_hash` column in the database.
+> That worked because the vault key was stored separately, in usable form, in
+> `raw_dek`. Which also meant anyone who could write to your database could
+> reset the hash, read the key and decrypt everything. The reset was not a
+> feature sitting next to the encryption; it was a hole straight through it.
+>
+> The vault key is now stored only wrapped under your passphrase, so there is
+> no value in the database that a reset could unlock. Losing the passphrase
+> genuinely loses the data. That is the trade, and it is the right one for a
+> credential manager.
 
-**For Supabase users:**
+**Account password vs master passphrase** — two different secrets:
 
-1. Access your Supabase dashboard and navigate to the `vault_config` table
-2. Generate a new bcrypt hash using your desired new passphrase
-3. Replace the `bcrypt_hash` value in your database
-4. Login with your new passphrase
-
-**For SQLite (local) users:**
-
-1. Open your browser's DevTools → Application → IndexedDB → find the Keyper database
-2. Alternatively, use the in-app **Settings → Reset** tab for guided instructions
-3. Generate a new bcrypt hash using your desired new passphrase
-4. Replace the `bcrypt_hash` value in the `vault_config` table and reload
-
-**Security Benefits:**
-
-- ✅ **No Backdoors**: Complete elimination of admin override capabilities
-- ✅ **User Control**: Only you can reset your own passphrase
-- ✅ **Data Safety**: Your encrypted credentials remain completely safe
-- ✅ **Industry Standard**: Uses proven bcrypt hashing technology
-- ✅ **Zero Knowledge**: Hash-only storage ensures maximum security
+| | Account password | Master passphrase |
+|---|---|---|
+| What it does | Proves who you are so the database returns your rows | Decrypts those rows |
+| Where it lives | Supabase Auth | Only in your head |
+| Can it be reset? | Yes, by email | No, never |
+| If leaked | Attacker gets ciphertext and metadata | Attacker needs your rows too |
 
 ### Getting Help
 
@@ -489,18 +531,34 @@ Keyper works as a Progressive Web App for a native app experience!
 
 ### Security Features
 
-- 🔒 **Row Level Security** - Database-level access control
-- 🔐 **Encryption** - Data encrypted at rest and in transit
-- 👤 **User Isolation** - Each user sees only their data
+- 🔒 **Row Level Security** - Owner-scoped policies that require an authenticated session
+- 🔐 **Encryption** - Secret values encrypted client-side; metadata stored in plaintext
+- 👤 **User Isolation** - Enforced by the database, not by client-side filtering
 - 🛡️ **Offline-First Option** - SQLite mode requires no internet and stores data entirely on-device
 
 ### Multi-User Notes
 
-- **Registration**: Users can self-register from the lock screen via **Create New User**; no admin account is required.
-- **User Management**: Dashboard includes a **User Management** area that lists registered users and supports secure switching.
-- **Isolation**: Every username has its own `vault_config`, passphrase verifier, encryption key material, credentials, and categories.
-- **No Backdoors**: Switching users never bypasses passphrase verification, and there is no admin recovery path.
-- **Reset Model**: Emergency passphrase reset remains self-service per user via that user’s `bcrypt_hash` record.
+- **Registration**: Users self-register with an email and password through Supabase Auth. No admin account is required. Enable the Email provider in your Supabase project first.
+- **Isolation**: Every account has its own `vault_config`, wrapped vault key, credentials and categories, and the database enforces the separation through owner-scoped RLS policies. It is not client-side filtering that you could bypass by editing a query.
+- **Switching accounts**: Sign out and sign in as the other account. There is no in-app account switcher any more, because listing other users required a database read that is now correctly refused.
+- **No Backdoors**: There is no admin override and no recovery path. Signing in gets you your own encrypted rows; the master passphrase is still required to read them.
+
+### Security model
+
+Worth being precise about what each layer does, because they are easy to conflate:
+
+| Layer | Protects against | Does not protect against |
+|---|---|---|
+| Supabase Auth session | Anyone with just the anon key reading your rows | Someone who has your account password |
+| RLS owner-scoped policies | Another signed-in user reading or deleting your rows | Your own account being compromised |
+| Passphrase-wrapped vault key | Database dumps, leaked service-role keys, backups | Someone who has your master passphrase |
+| AES-256-GCM on `secret_blob` | Reading your actual secrets | Reading your metadata, which is plaintext |
+
+**Known limitations**, stated plainly:
+
+- Only `secret_blob` is encrypted. `title`, `username`, `url`, `notes`, `tags`, `category` and `priority` are plaintext. An attacker with row access learns your credential inventory even if they cannot decrypt a single secret.
+- **Neon mode puts a full Postgres connection string in the browser.** That is a complete database credential, and RLS cannot constrain it because the role owns the tables. Use Neon mode only as a single operator with a private connection string. For real multi-user separation use Supabase; for a private local vault use SQLite.
+- The anon key is not a secret and never was. It is safe to expose, and on its own it now reads nothing.
 
 ---
 

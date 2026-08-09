@@ -1,176 +1,99 @@
-import React, { useEffect, useState} from 'react';
-import { Alert, AlertDescription} from '@/components/ui/alert';
-import { Badge} from '@/components/ui/badge';
-import { Button} from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
-import { getCurrentUsername, supabase} from '@/integrations/supabase/client';
-import { vaultManager} from '@/services/VaultManager';
-import { AlertTriangle, Lock, RefreshCw, Shield, UserPlus, Users} from 'lucide-react';
+/**
+ * UserSwitcher - the signed-in account panel
+ *
+ * This component used to list every registered user by selecting user_id from
+ * vault_config with no filter, and let you switch to any of them. That only
+ * worked because the table was readable by anyone, which was the bug. Now the
+ * query would return just your own row, and switching accounts means signing in
+ * as that account, which is the honest behaviour.
+ *
+ * Made with ❤️ by Pink Pixel ✨
+ */
 
-const SHOW_REGISTRATION_KEY = 'keyper-show-registration';
-
-interface RegisteredUser {
- user_id: string;
- created_at?: string;
-}
+import React, { useEffect, useState } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { getDisplayName, signOut, isAuthRequired } from '@/integrations/supabase/auth';
+import { vaultManager } from '@/services/VaultManager';
+import { AlertTriangle, LogOut, Shield, User } from 'lucide-react';
 
 interface UserSwitcherProps {
- onUserSwitched?: () => void;
+  onUserSwitched?: () => void;
 }
 
-export default function UserSwitcher({ onUserSwitched}: UserSwitcherProps) {
- const [users, setUsers] = useState<RegisteredUser[]>([]);
- const [loading, setLoading] = useState(true);
- const [switchingUser, setSwitchingUser] = useState<string | null>(null);
- const [error, setError] = useState<string | null>(null);
+export default function UserSwitcher({ onUserSwitched }: UserSwitcherProps) {
+  const [accountName, setAccountName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
 
- const currentUser = getCurrentUsername();
+  const authRequired = isAuthRequired();
 
- const loadUsers = async () => {
- try {
- setLoading(true);
- setError(null);
+  useEffect(() => {
+    void getDisplayName().then(setAccountName);
+  }, []);
 
- const { data, error: queryError} = await supabase
- .from('vault_config')
- .select('user_id, created_at')
- .order('user_id', { ascending: true});
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    setError(null);
 
- if (queryError) {
- throw queryError;
-}
+    try {
+      // Drop the decrypted key before the session goes away, not after.
+      vaultManager.clearSession();
+      await signOut();
+      onUserSwitched?.();
+      window.location.reload();
+    } catch (signOutError) {
+      console.error('Failed to sign out:', signOutError);
+      setError(signOutError instanceof Error ? signOutError.message : 'Failed to sign out');
+      setSigningOut(false);
+    }
+  };
 
- setUsers((data || []) as RegisteredUser[]);
-} catch (loadError) {
- console.error('Failed to load registered users:', loadError);
- setError(loadError instanceof Error ? loadError.message : 'Failed to load registered users');
-} finally {
- setLoading(false);
-}
-};
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <User className="h-5 w-5 text-primary" aria-hidden="true" />
+          Account
+        </CardTitle>
+        <CardDescription>
+          {authRequired
+            ? 'Your vault belongs to this account. To use a different one, sign out and sign in as that account.'
+            : 'This vault is stored locally on this device, so there is no account to sign in to.'}
+        </CardDescription>
+      </CardHeader>
 
- useEffect(() => {
- void loadUsers();
-}, []);
+      <CardContent className="space-y-4">
+        <Alert>
+          <Shield className="h-4 w-4" aria-hidden="true" />
+          <AlertDescription>
+            Signed in as <strong>{accountName || 'loading...'}</strong>. Signing in
+            only gets you your own encrypted rows; the master passphrase is still
+            required to read them.
+          </AlertDescription>
+        </Alert>
 
- const handleSwitchUser = async (username: string) => {
- if (username === currentUser) {
- return;
-}
+        {error && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
- setSwitchingUser(username);
- setError(null);
-
- try {
- vaultManager.switchUserContext(username);
- onUserSwitched?.();
- window.location.reload();
-} catch (switchError) {
- console.error('Failed to switch user:', switchError);
- setError(switchError instanceof Error ? switchError.message : 'Failed to switch user');
- setSwitchingUser(null);
-}
-};
-
- const handleAddUser = () => {
- localStorage.setItem(SHOW_REGISTRATION_KEY, 'true');
- vaultManager.lockVault();
- window.location.reload();
-};
-
- return (
- <Card>
- <CardHeader>
- <CardTitle className="flex items-center gap-2">
- <Users className="h-5 w-5 text-primary" />
- User Management
- </CardTitle>
- <CardDescription>
- Each username has its own vault. Switching only changes the active login context and still requires that user&apos;s passphrase.
- </CardDescription>
- </CardHeader>
- <CardContent className="space-y-4">
- <Alert>
- <Shield className="h-4 w-4" />
- <AlertDescription>
- Current user: <strong>{currentUser}</strong>. There are no admin backdoors, and switching users never bypasses passphrase verification.
- </AlertDescription>
- </Alert>
-
- {error && (
- <Alert variant="destructive">
- <AlertTriangle className="h-4 w-4" />
- <AlertDescription>{error}</AlertDescription>
- </Alert>
- )}
-
- <div className="flex flex-wrap gap-3">
- <Button
- type="button"
- variant="outline"
- onClick={() => void loadUsers()}
- disabled={loading}
- className="flex items-center gap-2"
- >
- <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
- Refresh Users
- </Button>
- <Button
- type="button"
- onClick={handleAddUser}
- className="flex items-center gap-2"
- >
- <UserPlus className="h-4 w-4" />
- Add New User
- </Button>
- </div>
-
- <div className="space-y-3">
- {loading ? (
- <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
- Loading registered users...
- </div>
- ) : users.length === 0 ? (
- <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
- No registered users were found yet.
- </div>
- ) : (
- users.map((user) => {
- const isCurrent = user.user_id === currentUser;
-
- return (
- <div
- key={user.user_id}
- className="flex flex-col gap-3 rounded-lg border border-border/60 bg-muted/30 p-4 md:flex-row md:items-center md:justify-between"
- >
- <div className="space-y-1">
- <div className="flex items-center gap-2">
- <span className="font-medium">{user.user_id}</span>
- {isCurrent && <Badge variant="secondary">Current</Badge>}
- </div>
- <p className="text-xs text-muted-foreground">
- {user.created_at
- ? `Registered ${new Date(user.created_at).toLocaleDateString()}`
- : 'Registration date unavailable'}
- </p>
- </div>
-
- <Button
- type="button"
- variant={isCurrent ? 'secondary' : 'outline'}
- onClick={() => void handleSwitchUser(user.user_id)}
- disabled={Boolean(switchingUser) || isCurrent}
- className="flex items-center gap-2"
- >
- <Lock className="h-4 w-4" />
- {switchingUser === user.user_id ? 'Switching...' : isCurrent ? 'Active User' : 'Switch User'}
- </Button>
- </div>
- );
-})
- )}
- </div>
- </CardContent>
- </Card>
- );
+        {authRequired && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void handleSignOut()}
+            disabled={signingOut}
+            className="flex w-full items-center gap-2 sm:w-auto"
+          >
+            <LogOut className="h-4 w-4" aria-hidden="true" />
+            {signingOut ? 'Signing out...' : 'Sign out'}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
 }

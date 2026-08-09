@@ -43,9 +43,10 @@ CREATE TABLE IF NOT EXISTS credentials (
 CREATE TABLE IF NOT EXISTS vault_config (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL DEFAULT 'self-hosted-user',
+  -- The DEK is stored only in wrapped form: encrypted under a key derived from
+  -- the master passphrase. Given the warning below about who can read this
+  -- database, that wrapping is doing most of the actual work here.
   wrapped_dek JSONB,
-  raw_dek TEXT,
-  bcrypt_hash TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(user_id)
@@ -116,6 +117,40 @@ CREATE TRIGGER update_categories_updated_at
 -- ============================================================================
 -- 4. ROW LEVEL SECURITY
 -- ============================================================================
+--
+-- ⚠️  READ THIS BEFORE RELYING ON ANYTHING IN THIS SECTION
+--
+-- Keyper's Neon mode connects to this database straight from the browser using
+-- a Postgres connection string you paste into the app. That string is a full
+-- database credential, not a scoped public key like Supabase's anon key.
+--
+-- What that means in practice:
+--
+--   * Anyone who obtains the connection string has complete access to this
+--     database. Row Level Security cannot prevent that, because the role in
+--     that string owns these tables, and table owners bypass RLS by default.
+--   * There is no server-side identity to scope policies against. Neon mode has
+--     no login, so there is no auth.uid() equivalent to compare a row against.
+--   * The connection string is held in browser localStorage, so any XSS in the
+--     app, or anyone with access to the machine, can read it.
+--
+-- So RLS is enabled below, but NO permissive policies are created. With RLS on
+-- and no policies, any non-owner role reads zero rows, which is the correct
+-- fail-closed default. The owner role in your connection string still sees
+-- everything. Writing USING (true) policies here, as earlier versions did,
+-- created the appearance of protection while granting exactly that same access,
+-- and that is the confusion this comment exists to prevent.
+--
+-- Use Neon mode when you are the single operator and the connection string
+-- stays private. If you need real multi-user separation, use the Supabase
+-- provider, which authenticates users and enforces owner-scoped policies. If you
+-- just want a private local vault, use SQLite mode, where the file permissions
+-- on your own machine are the boundary.
+--
+-- Your credentials remain encrypted regardless: secret_blob is AES-GCM
+-- ciphertext and the DEK above is wrapped under your master passphrase, which is
+-- never stored. But titles, usernames, URLs, notes and tags are plaintext, and
+-- anyone with the connection string can read or delete rows.
 
 ALTER TABLE credentials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vault_config ENABLE ROW LEVEL SECURITY;
@@ -141,20 +176,11 @@ BEGIN
   END LOOP;
 END $$;
 
-CREATE POLICY "credentials_select_policy" ON credentials FOR SELECT USING (true);
-CREATE POLICY "credentials_insert_policy" ON credentials FOR INSERT WITH CHECK (true);
-CREATE POLICY "credentials_update_policy" ON credentials FOR UPDATE USING (true) WITH CHECK (true);
-CREATE POLICY "credentials_delete_policy" ON credentials FOR DELETE USING (true);
-
-CREATE POLICY "vault_config_select_policy" ON vault_config FOR SELECT USING (true);
-CREATE POLICY "vault_config_insert_policy" ON vault_config FOR INSERT WITH CHECK (true);
-CREATE POLICY "vault_config_update_policy" ON vault_config FOR UPDATE USING (true) WITH CHECK (true);
-CREATE POLICY "vault_config_delete_policy" ON vault_config FOR DELETE USING (true);
-
-CREATE POLICY "categories_select_policy" ON categories FOR SELECT USING (true);
-CREATE POLICY "categories_insert_policy" ON categories FOR INSERT WITH CHECK (true);
-CREATE POLICY "categories_update_policy" ON categories FOR UPDATE USING (true) WITH CHECK (true);
-CREATE POLICY "categories_delete_policy" ON categories FOR DELETE USING (true);
+-- Intentionally no policies. See the warning above: the connection string's role
+-- owns these tables and bypasses RLS anyway, so a permissive policy would add
+-- nothing except a false sense of protection. Leaving the tables policy-free
+-- means any additional restricted role you create later reads nothing until you
+-- deliberately grant it something.
 
 -- ============================================================================
 -- 5. HELPER FUNCTIONS

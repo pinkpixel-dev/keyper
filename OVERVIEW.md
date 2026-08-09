@@ -4,7 +4,7 @@
 
 ![Keyper Logo](./public/logo.png)
 
-**✨ Modern Self-Hosted Credential Management with Zero-Knowledge Encryption ✨**
+**✨ Modern Self-Hosted Credential Management with Client-Side Encryption ✨**
 
 [![Version](https://img.shields.io/npm/v/@pinkpixel/keyper?style=for-the-badge&color=06B6D4)](https://www.npmjs.com/package/@pinkpixel/keyper)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE)
@@ -37,11 +37,11 @@ _Dream it, Pixel it_ - **Made with ❤️ by Pink Pixel**
 
 ## 🎯 Project Purpose
 
-**Keyper** is a modern, self-hosted credential management application designed to provide complete control over sensitive data while maintaining enterprise-grade security. The project addresses the growing need for secure credential storage with a zero-knowledge architecture that ensures even the database administrator cannot access user secrets.
+**Keyper** is a modern, self-hosted credential management application designed to provide complete control over sensitive data. Secrets are encrypted in the browser under a key that is itself stored only wrapped under the user's master passphrase, so a database administrator holding a full dump cannot decrypt them. Credential *metadata* is a different matter and is stored in plaintext; see the limitations note under Security Implementation.
 
 ### Key Objectives
 
-- 🔒 **Zero-Knowledge Security**: All encryption happens client-side
+- 🔒 **Client-Side Encryption**: Secrets are encrypted before they leave the browser, under a key the server never holds in usable form
 - 🏠 **Self-Hosted Control**: Complete data ownership and privacy
 - 👤 **Multi-User Support**: Self-service registration, secure user switching, and isolated per-user vaults
 - 📱 **Modern Experience**: Progressive Web App with native-like features
@@ -93,9 +93,9 @@ graph TB
 
 ### Core Design Principles
 
-1. **Zero-Knowledge Architecture**: Encryption/decryption occurs exclusively in the browser
-2. **Stateless Backend**: Database stores only encrypted blobs and metadata
-3. **User Isolation**: Multi-tenant support with strict data separation
+1. **Client-Side Encryption**: Encryption and decryption occur exclusively in the browser, and the master passphrase never leaves it
+2. **Stateless Backend**: The database stores encrypted secrets, plaintext metadata, and a vault key that is useless without the passphrase
+3. **User Isolation**: Enforced by the database through owner-scoped RLS, not by the client choosing to filter
 4. **Progressive Enhancement**: Works offline with cached data
 5. **Security First**: Multiple layers of protection and validation
 
@@ -117,9 +117,10 @@ graph TB
 - 🔐 **End-to-End Encryption**: All sensitive data encrypted before database storage
 - 🔑 **Master Passphrase Protection**: Single passphrase controls vault access
 - ⏰ **Auto-Lock**: 15-minute inactivity timeout with activity detection
-- 🛡️ **Row Level Security**: Database-level access control
-- 👤 **Per-User Vault Isolation**: Independent vault metadata and encrypted payloads per `user_id`
-- 🚫 **No Admin Backdoors**: Registration and user switching never bypass passphrase verification
+- 🛡️ **Row Level Security**: Policies scoped `TO authenticated` with `owner_id = auth.uid()`, so the anon key alone reads nothing
+- 👤 **Per-User Vault Isolation**: Enforced by the database via `owner_id`, not by client-side filtering
+- 🚫 **No Admin Backdoors**: No recovery path for the master passphrase, because no value exists that could provide one
+- ⚠️ **Metadata is plaintext**: Only `secret_blob` is encrypted; titles, usernames, URLs, notes and tags are readable by anyone with row access
 - 🔒 **Content Security Policy**: Browser-level protection against XSS
 - 🚫 **No Telemetry in App**: Zero tracking, telemetry, or data collection within the Keyper credential manager application itself. (The documentation website uses basic PostHog analytics to count total downloads and search query frequency).
 
@@ -294,19 +295,25 @@ Secure key management configuration with dual authentication systems:
 ````sql
 CREATE TABLE vault_config (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT NOT NULL DEFAULT 'self-hosted-user',
 
-  -- New bcrypt-only system for simplified security
-  raw_dek BYTEA,                    -- Plain DEK for new users
-  bcrypt_hash TEXT,                 -- Bcrypt hash of master passphrase
+  -- Ownership. owner_id is the security boundary and what RLS scopes on.
+  owner_id UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL DEFAULT 'self-hosted-user',  -- display label only
 
-  -- Legacy wrapped DEK system (backwards compatibility)
-  wrapped_dek JSONB,                -- Encrypted DEK for existing users
+  -- The DEK, stored ONLY wrapped: AES-GCM encrypted under an Argon2id key
+  -- derived from the master passphrase. There is no other copy and no verifier
+  -- hash, so nothing here decrypts without the passphrase.
+  wrapped_dek JSONB,
 
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(user_id)
+  UNIQUE(owner_id)
 );```
+
+> **Removed in v1.3.0:** `raw_dek` held the DEK in directly usable form and
+> `bcrypt_hash` held an offline-crackable hash of the master passphrase. Together
+> with unconditional RLS policies, they meant anyone with the anon key could read
+> the key that decrypts the vault. See `migration-auth-rls.sql`.
 
 #### **categories**
 Organization and categorization system:
@@ -327,8 +334,9 @@ CREATE TABLE categories (
 
 ### Security Features
 
-- ✅ **Row Level Security (RLS)** enabled on all tables
-- ✅ **Comprehensive policies** for multi-user isolation
+- ✅ **Row Level Security (RLS)** enabled *and enforced* on all tables
+- ✅ **Owner-scoped policies** requiring an authenticated session, verified by `npm run test:rls` against a real Postgres
+- ✅ **anon revoked** at the grant layer as well as by policy
 - ✅ **Performance indexes** on frequently queried columns
 - ✅ **Automatic triggers** for timestamp maintenance
 - ✅ **Helper functions** for statistics and verification
@@ -514,7 +522,7 @@ npm run electron:build:win     # NSIS / Windows build tooling required
 
 ### Version Information
 
-- **Current Version**: 1.2.2
+- **Current Version**: 1.3.0
 - **Release Date**: August 2026
 - **Last Updated**: August 2026
 - **Status**: Stable Production Release 🟢

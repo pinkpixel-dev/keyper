@@ -1,216 +1,183 @@
 /**
- * VaultStorage - Manages DEK storage in Supabase
- * 
- * Handles both legacy (wrapped_dek) and new (raw_dek + bcrypt_hash) configurations
- * for seamless migration from complex encryption to simple bcrypt-only system.
- * 
+ * VaultStorage - reads and writes the vault key record.
+ *
+ * Rows are owned by owner_id, which is the authenticated account id and the
+ * column every RLS policy scopes on. The legacy user_id column is still written
+ * as a display label but carries no authority: the database ignores it for
+ * access control, and so should we.
+ *
  * Made with ❤️ by Pink Pixel ✨
  */
 
-import { supabase, getCurrentUsername } from '@/integrations/supabase/client';
-import type { WrappedDEK } from './SecureVault';
+import { supabase } from '@/integrations/supabase/client';
+import { requireOwnerId, ownerColumn, ownershipFields } from '@/integrations/supabase/auth';
+import { isWrappedDEK, type WrappedDEK } from '@/crypto/dek';
 
 /**
- * Legacy vault configuration (wrapped_dek based)
+ * The vault key record as stored today.
  */
-export interface LegacyVaultConfig {
+export interface VaultConfig {
   id: string;
+  owner_id: string;
   user_id: string;
   wrapped_dek: WrappedDEK;
-  bcrypt_hash?: string;
   created_at: string;
   updated_at: string;
 }
 
 /**
- * New vault configuration (raw_dek + bcrypt_hash based)
+ * A pre-migration record whose DEK is still sitting in the database in raw,
+ * directly usable form. Anything that reads one of these must migrate it.
  */
-export interface NewVaultConfig {
+export interface LegacyRawVaultConfig {
   id: string;
+  owner_id: string;
   user_id: string;
-  raw_dek: string; // Base64 encoded raw DEK bytes
-  bcrypt_hash: string;
+  raw_dek: string;
   created_at: string;
   updated_at: string;
 }
 
-/**
- * Union type for vault configurations
- */
-export type VaultConfig = LegacyVaultConfig | NewVaultConfig;
+export type AnyVaultConfig = VaultConfig | LegacyRawVaultConfig;
 
-/**
- * Type guard to check if config is legacy
- */
-export function isLegacyVaultConfig(config: VaultConfig): config is LegacyVaultConfig {
-  return 'wrapped_dek' in config && config.wrapped_dek !== null;
+export function isWrappedVaultConfig(config: AnyVaultConfig): config is VaultConfig {
+  return isWrappedDEK((config as VaultConfig).wrapped_dek);
+}
+
+export function isLegacyRawVaultConfig(config: AnyVaultConfig): config is LegacyRawVaultConfig {
+  const raw = (config as LegacyRawVaultConfig).raw_dek;
+  return typeof raw === 'string' && raw.length > 0;
 }
 
 /**
- * Type guard to check if config is new format
+ * Get the vault config for the signed-in account.
+ *
+ * Returns null when there is no vault yet. Throws when there is no session,
+ * because a missing session is a bug in the caller rather than an empty vault,
+ * and silently returning null would look like a first-time user and prompt to
+ * overwrite a vault that is actually there.
  */
-export function isNewVaultConfig(config: VaultConfig): config is NewVaultConfig {
-  return 'raw_dek' in config && config.raw_dek !== null && config.raw_dek !== undefined;
-}
+export async function getVaultConfig(): Promise<AnyVaultConfig | null> {
+  const ownerId = await requireOwnerId();
 
-/**
- * Get vault configuration for current user
- * Fixed: Use instance-based config instead of username-based to avoid conflicts when username changes
- */
-export async function getVaultConfig(): Promise<VaultConfig | null> {
-  try {
-    // Use the configured username for vault config
-    const currentUsername = getCurrentUsername();
-    console.log('🔍 Getting vault config for user:', currentUsername);
-    
-    const { data, error } = await supabase
-      .from('vault_config')
-      .select('*')
-      .eq('user_id', currentUsername)
-      .single();
+  // single() rather than maybeSingle(): the SQLite and Neon builders only
+  // implement single(), and all three providers report "no rows" as PGRST116.
+  const { data, error } = await supabase
+    .from('vault_config')
+    .select('*')
+    .eq(ownerColumn(), ownerId)
+    .single();
 
-    console.log('📊 Vault config query result:', { data, error });
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        // No rows returned - vault not initialized
-        console.log('ℹ️ No vault config found (PGRST116) - vault not initialized');
-        return null;
-      }
-      console.error('❌ Database error getting vault config:', error);
-      throw error;
-    }
-
-    // Handle both legacy and new vault configurations
-    if (data) {
-      // Check for new format (raw_dek + bcrypt_hash)
-      if (data.raw_dek && data.bcrypt_hash) {
-        console.log('✅ Valid new vault config found with raw DEK and bcrypt hash');
-        return data as NewVaultConfig;
-      }
-      
-      // Check for legacy format (wrapped_dek)
-      if (data.wrapped_dek) {
-        console.log('✅ Valid legacy vault config found with wrapped DEK');
-        return data as LegacyVaultConfig;
-      }
-    }
-    
-    console.log('🚫 No valid vault configuration found');
-    return null;
-  } catch (error) {
-    console.error('💥 Error getting vault config:', error);
-    
-    // If it's a network/connection error, return null instead of throwing
-    if (
-      error instanceof TypeError ||
-      (error instanceof Error && error.message.includes('fetch')) ||
-      (error instanceof Error && error.message.includes('network'))
-    ) {
-      console.warn('🌐 Network error detected, treating as vault not initialized');
+  if (error) {
+    if (error.code === 'PGRST116') {
+      // No vault yet. That is a normal first-run state, not a failure.
       return null;
     }
-    
+    console.error('❌ Error getting vault config:', error);
+    throw error;
+  }
+
+  if (!data) {
     return null;
   }
+
+  // The compat wrapper unions three provider builders, so `data` arrives as
+  // unknown. Narrow it once here rather than casting at every access.
+  const row = data as { wrapped_dek?: unknown; raw_dek?: unknown };
+
+  if (isWrappedDEK(row.wrapped_dek)) {
+    return data as AnyVaultConfig as VaultConfig;
+  }
+
+  if (typeof row.raw_dek === 'string' && row.raw_dek.length > 0) {
+    console.warn('⚠️ Legacy vault detected: key is stored raw and needs migrating');
+    return data as AnyVaultConfig as LegacyRawVaultConfig;
+  }
+
+  console.warn('🚫 Vault config row exists but holds no usable key');
+  return null;
 }
 
 /**
- * Save new vault configuration for current user (raw_dek + bcrypt_hash)
- * Fixed: Use instance-based config instead of username-based to avoid conflicts when username changes
+ * Persist the wrapped DEK for the signed-in account.
+ *
+ * onConflict targets owner_id because that is the real identity of a vault. The
+ * old code upserted on user_id, which meant renaming yourself could collide with
+ * or overwrite a different vault.
  */
-export async function saveVaultConfig(rawDEK: string, bcryptHash: string): Promise<NewVaultConfig> {
-  try {
-    // Use the configured username for vault config
-    const currentUsername = getCurrentUsername();
-    
-    const { data, error } = await supabase
-      .from('vault_config')
-      .upsert({
-        user_id: currentUsername,
-        raw_dek: rawDEK,
-        bcrypt_hash: bcryptHash,
-        wrapped_dek: null, // Explicitly set to null for new configs
-        updated_at: new Date().toISOString()
-      })
-      .select()
-      .single();
+export async function saveVaultConfig(wrappedDEK: WrappedDEK): Promise<VaultConfig> {
+  const ownerId = await requireOwnerId();
 
-    if (error) {
-      throw error;
-    }
+  const payload = {
+    ...(await ownershipFields()),
+    wrapped_dek: wrappedDEK as unknown,
+    updated_at: new Date().toISOString(),
+  };
 
-    return data as NewVaultConfig;
-  } catch (error) {
+  const { data, error } = await supabase
+    .from('vault_config')
+    // The ownership column is chosen at runtime per provider, which the
+    // generated row types cannot express, so the payload is cast at the call.
+    .upsert(payload as never, { onConflict: ownerColumn() })
+    .select()
+    .single();
+
+  if (error) {
     console.error('Error saving vault config:', error);
-    throw new Error(`Failed to save vault configuration: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(`Failed to save vault configuration: ${error.message}`);
   }
+
+  return data as unknown as VaultConfig;
 }
 
 /**
- * Save legacy vault configuration (wrapped_dek based) - for backwards compatibility
+ * Complete the legacy migration: store the wrapped DEK and clear the raw one in
+ * a single write, so we never leave a row holding both.
  */
-export async function saveLegacyVaultConfig(wrappedDEK: WrappedDEK, bcryptHash?: string): Promise<LegacyVaultConfig> {
-  try {
-    // Use the configured username for vault config
-    const currentUsername = getCurrentUsername();
-    
-    const { data, error } = await supabase
-      .from('vault_config')
-      .upsert({
-        user_id: currentUsername,
-        wrapped_dek: wrappedDEK as unknown,
-        bcrypt_hash: bcryptHash || null,
-        raw_dek: null, // Explicitly set to null for legacy configs
-        updated_at: new Date().toISOString()
-      })
-      .select()
-      .single();
+export async function replaceRawDEKWithWrapped(wrappedDEK: WrappedDEK): Promise<void> {
+  const ownerId = await requireOwnerId();
 
-    if (error) {
-      throw error;
-    }
+  const { error } = await supabase
+    .from('vault_config')
+    .update({
+      wrapped_dek: wrappedDEK as unknown,
+      raw_dek: null,
+      bcrypt_hash: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq(ownerColumn(), ownerId);
 
-    return {
-      ...data,
-      wrapped_dek: data.wrapped_dek as unknown as WrappedDEK
-    } as LegacyVaultConfig;
-  } catch (error) {
-    console.error('Error saving legacy vault config:', error);
-    throw new Error(`Failed to save legacy vault configuration: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  if (error) {
+    // Older databases may already have had the columns dropped by Stage 3 of the
+    // migration. That is fine: the wrapped key is what matters.
+    console.error('Error clearing legacy raw key:', error);
+    throw new Error(`Failed to complete vault migration: ${error.message}`);
   }
 }
 
 /**
- * Delete vault configuration for current user
- * Fixed: Use instance-based config instead of username-based to avoid conflicts when username changes
+ * Delete the vault config for the signed-in account.
  */
 export async function deleteVaultConfig(): Promise<void> {
-  try {
-    // Use the configured username for vault config
-    const currentUsername = getCurrentUsername();
-    
-    const { error } = await supabase
-      .from('vault_config')
-      .delete()
-      .eq('user_id', currentUsername);
+  const ownerId = await requireOwnerId();
 
-    if (error) {
-      throw error;
-    }
-  } catch (error) {
+  const { error } = await supabase
+    .from('vault_config')
+    .delete()
+    .eq(ownerColumn(), ownerId);
+
+  if (error) {
     console.error('Error deleting vault config:', error);
-    throw new Error(`Failed to delete vault configuration: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(`Failed to delete vault configuration: ${error.message}`);
   }
 }
 
 /**
- * Check if vault is initialized for current user
+ * Check whether the signed-in account has a vault yet.
  */
 export async function isVaultInitialized(): Promise<boolean> {
   try {
-    const config = await getVaultConfig();
-    return config !== null;
+    return (await getVaultConfig()) !== null;
   } catch (error) {
     console.error('Error checking vault initialization:', error);
     return false;

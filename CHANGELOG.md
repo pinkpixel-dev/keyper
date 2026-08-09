@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-09 - 🔐 **Authenticated Row Access & Passphrase-Wrapped Vault Key**
+
+This release closes a real vulnerability. If you run a deployed Keyper instance,
+read the migration notes below before upgrading, and take a database backup.
+
+Reported privately by **Cenk Kurtoglu** ([github.com/cekuu35](https://github.com/cekuu35)),
+who found it by reading the public setup SQL and emailed rather than opening an
+issue. He asked for no credit; he gets it anyway.
+
+### 🚨 Security
+
+- **Fixed** Row Level Security policies were enabled but enforced nothing. All twelve policies were written as `USING (true)` with no `TO` clause, which applies to `PUBLIC` and therefore includes `anon`. Anyone holding the anon key of a deployed instance could read, overwrite and delete every row in `credentials`, `vault_config` and `categories`. Policies are now scoped `TO authenticated` with `owner_id = (SELECT auth.uid())`.
+- **Fixed** `vault_config.raw_dek` stored the data encryption key in directly usable form, next to the ciphertext it protects and reachable through the same unrestricted path. The key is now stored only wrapped under an Argon2id key derived from the master passphrase, so a full database dump decrypts nothing.
+- **Fixed** The bcrypt-based passphrase reset was a hole through the encryption rather than a feature beside it: overwriting `bcrypt_hash` granted access precisely because `raw_dek` was stored independently of the passphrase. Both columns are gone, and passphrase recovery is now genuinely impossible.
+- **Fixed** `get_credential_stats()` was `SECURITY DEFINER` while reading the `credentials` table, bypassing RLS entirely and returning another user's statistics to any caller. It is now `SECURITY INVOKER` and owner-scoped.
+- **Fixed** Multi-user isolation was client-side filtering on a `user_id` string held in `localStorage`, while the README advertised database-level per-user isolation. Isolation is now enforced by the database.
+- **Fixed** The setup SQL shown in Settings was a second copy of `supabase-setup.sql` pasted into the component. It had drifted, so users copying from the app installed the old wide-open policies. Settings now reads the shipped file directly at build time.
+- **Added** `REVOKE ALL ... FROM anon` on all three tables, so anon is refused at the grant layer as well as by RLS.
+
+### 🔐 Authentication
+
+- **Added** Supabase Auth. Keyper now requires a real session; the anon key alone opens nothing.
+- **Added** `AuthGate`, which requires a session before the dashboard renders, and `SignInForm` with sign-in, sign-up and account password reset.
+- **Changed** `UserRegistration` creates a real account instead of registering an unauthenticated username.
+- **Changed** `UserSwitcher` is now an account panel showing who is signed in, with sign out. The old user list is gone because enumerating other users required exactly the unrestricted read this release removes.
+- **Changed** The passphrase screen no longer asks for a username. Identity comes from the session.
+- **Added** Sign-out and token expiry clear the decrypted key from memory.
+
+### 🔑 Encryption
+
+- **Added** `src/crypto/dek.ts` handling DEK generation, wrapping, unwrapping and re-wrapping, with the vault key imported as a non-extractable `CryptoKey`.
+- **Added** Passphrase change, which re-wraps the same vault key so nothing needs re-encrypting and existing credentials keep working.
+- **Changed** The wrong passphrase is now rejected by AES-GCM tag verification during unwrap. That failure is the check; there is no separate stored verifier.
+- **Removed** `raw_dek` and `bcrypt_hash` from new installs, along with the `bcrypt` verification path.
+
+### 🧪 Testing
+
+- **Added** `tests/rls/` — a real Postgres suite that applies the shipped `supabase-setup.sql` against a Supabase auth shim and asserts anon is refused, one account cannot read another's vault key, `WITH CHECK` blocks cross-owner writes, and an unqualified `DELETE` cannot empty another account's vault. Run with `npm run test:rls`.
+- **Added** DEK unit tests covering round-trip, wrong-passphrase rejection, tamper detection, key non-extractability, and that neither the DEK nor the passphrase appears in the wrapped output.
+- **Added** A test running against real PBKDF2, since the shared setup mocks Argon2 and no other test exercised a genuine KDF.
+- **Added** Schema guards that fail the build if unconditional policies or plaintext key columns reappear.
+- **Changed** Test count went from 97 to 123, all passing.
+
+### 📝 Documentation
+
+- **Changed** README security claims now match what the code does, including a security model table and a plainly stated limitations section.
+- **Added** An explicit note that only `secret_blob` is encrypted; titles, usernames, URLs, notes and tags are plaintext.
+- **Added** A warning that Neon mode puts a full database credential in the browser, which RLS cannot constrain. `neon-setup.sql` no longer creates policies that imply otherwise.
+- **Added** `migration-auth-rls.sql`, a staged migration for existing deployments.
+- **Added** `RELEASE.md` with upgrade steps and the full breaking-change list.
+
+### 🧭 Upgrade experience
+
+- **Added** Detection for databases that predate this release. Keyper probes for the ownership column on startup and, if it is missing, shows a guided screen instead of a generic failure: what happened, that credentials are safe and nothing was deleted, the ordered steps, a copy button for the migration SQL, and a re-check button.
+- **Added** The probe runs before sign-in, since the old permissive policies still allow it. Telling someone to create an account and then failing afterwards would waste their time.
+- **Added** A pre-flight guard in `supabase-setup.sql` that aborts if the database already contains credentials or a vault config, so nobody destroys a live vault by running the fresh-install script instead of the migration.
+- **Changed** The un-migrated case previously surfaced as "Could not reach your vault", which reads like data loss and invites exactly the wrong reaction.
+
+### ⚠️ Breaking Changes
+
+- **Supabase users must enable the Email auth provider** and create an account. The anon key alone no longer works.
+- **Existing deployments must run `migration-auth-rls.sql`.** It is staged deliberately: claim your rows, apply the new policies, unlock once in the app so Keyper re-wraps your key, and only then drop `raw_dek`. Dropping it early destroys your vault permanently.
+- **The master passphrase can no longer be reset.** It can be changed if you know the current one. If you forget it, the vault is unrecoverable. Write it down.
+- **The in-app account switcher is gone.** Sign out and sign in as the other account.
+
 ## [1.2.2] - 2026-08-08 - 🔒 **Dependency Security**
 
 ### 🔒 Dependency Security

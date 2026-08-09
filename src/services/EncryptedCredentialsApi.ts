@@ -7,7 +7,8 @@
  * Made with ❤️ by Pink Pixel ✨
  */
 
-import { supabase, getCurrentUsername } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/client';
+import { requireOwnerId, ownerColumn, ownershipFields } from '@/integrations/supabase/auth';
 import { vaultManager } from '@/services/VaultManager';
 import type { SecretBlobV1 } from '@/crypto/types';
 import { CryptoError, CryptoErrorType } from '@/crypto/types';
@@ -89,11 +90,9 @@ function normalizeEncryptedCredential(row: Record<string, unknown>): EncryptedCr
  * Create a new encrypted credential
  */
 export async function createEncryptedCredential(input: CredentialInput): Promise<EncryptedCredential> {
-  const currentUsername = getCurrentUsername();
-  
   // Prepare base credential data
   const baseData = {
-    user_id: currentUsername,
+    ...(await ownershipFields()),
     title: input.title.trim(),
     description: input.description?.trim() || null,
     credential_type: input.credential_type,
@@ -183,20 +182,22 @@ export async function createEncryptedCredential(input: CredentialInput): Promise
  * Get all credentials for the current user
  */
 export async function getEncryptedCredentials(): Promise<EncryptedCredential[]> {
-  const currentUsername = getCurrentUsername();
-  
+  const ownerId = await requireOwnerId();
+
   const { data, error } = await supabase
     .from('credentials')
     .select('*')
-    .eq('user_id', currentUsername)
+    .eq(ownerColumn(), ownerId)
     .order('created_at', { ascending: false });
 
   if (error) {
     throw new Error(`Failed to fetch credentials: ${error.message}`);
   }
 
-  return (data || []).map((item) =>
-    normalizeEncryptedCredential(item as Record<string, unknown>)
+  // The ownership column is picked at runtime, so the builder cannot infer a
+  // concrete row type here and hands back unknown.
+  return ((data || []) as Record<string, unknown>[]).map((item) =>
+    normalizeEncryptedCredential(item)
   );
 }
 
@@ -204,13 +205,13 @@ export async function getEncryptedCredentials(): Promise<EncryptedCredential[]> 
  * Get a single credential by ID
  */
 export async function getEncryptedCredential(id: string): Promise<EncryptedCredential | null> {
-  const currentUsername = getCurrentUsername();
-  
+  const ownerId = await requireOwnerId();
+
   const { data, error } = await supabase
     .from('credentials')
     .select('*')
     .eq('id', id)
-    .eq('user_id', currentUsername)
+    .eq(ownerColumn(), ownerId)
     .single();
 
   if (error) {
@@ -269,17 +270,14 @@ export async function updateEncryptedCredential(
   id: string, 
   input: Partial<CredentialInput>
 ): Promise<EncryptedCredential> {
-  const currentUsername = getCurrentUsername();
-  
-  // Get existing credential
+  const ownerId = await requireOwnerId();
+
+  // getEncryptedCredential already filters by owner, so a hit here is ours.
+  // The real enforcement is the RLS policy on the database side; this check
+  // only turns a silent no-op update into a clear error.
   const existing = await getEncryptedCredential(id);
   if (!existing) {
     throw new Error('Credential not found');
-  }
-  
-  // Verify ownership
-  if (existing.user_id !== currentUsername) {
-    throw new Error('Unauthorized: Cannot update credential belonging to another user');
   }
 
   // Prepare update data
@@ -368,13 +366,13 @@ export async function updateEncryptedCredential(
  * Delete a credential
  */
 export async function deleteEncryptedCredential(id: string): Promise<void> {
-  const currentUsername = getCurrentUsername();
-  
+  const ownerId = await requireOwnerId();
+
   const { error } = await supabase
     .from('credentials')
     .delete()
     .eq('id', id)
-    .eq('user_id', currentUsername);
+    .eq(ownerColumn(), ownerId);
 
   if (error) {
     throw new Error(`Failed to delete credential: ${error.message}`);

@@ -1,5 +1,79 @@
 # MEMORY.md
 
+## 2026-08-09: Authenticated RLS + Passphrase-Wrapped Vault Key (v1.3.0)
+
+Prompted by a private report from Cenk Kurtoglu (github.com/cekuu35), sent by
+email rather than filed as a public issue. Every technical claim in it was
+verified against the repo before any code changed.
+
+### What was decided
+
+- **Supabase Auth is now required.** All twelve RLS policies are scoped
+  `TO authenticated` with `owner_id = (SELECT auth.uid())`. Ownership moved to a
+  new `owner_id UUID` column referencing `auth.users`; the old `user_id TEXT`
+  stays as a display label with no authority.
+- **The DEK is stored only wrapped** under an Argon2id key derived from the
+  master passphrase. `raw_dek` and `bcrypt_hash` are gone.
+- **Ownership is resolved per provider.** `ownerColumn()` returns `owner_id` for
+  Supabase and `user_id` for SQLite/Neon, so the local providers keep working
+  without a pointless login prompt.
+- **Neon mode is documented, not "fixed".** Its setup script no longer creates
+  policies at all, and carries a warning instead.
+- **Settings imports `supabase-setup.sql` via `?raw`** rather than holding a copy.
+
+### Why
+
+- RLS was enabled but every policy was `USING (true)` with no `TO` clause, so it
+  applied to `PUBLIC` including `anon`. The anon key of any deployed instance
+  could read, overwrite and delete every row.
+- `raw_dek` put the decryption key in the same unrestricted path as the
+  ciphertext it protects, which is what made the exposure critical rather than
+  merely embarrassing.
+- The bcrypt reset was not a feature beside the encryption, it was a hole
+  through it: overwrite `bcrypt_hash`, then read `raw_dek`, and the vault opens.
+  Removing `raw_dek` removes the reset as a side effect, which is correct.
+- Multi-user isolation was client-side filtering on a localStorage string while
+  the README promised database-level isolation. That gap is the actual bug the
+  report found; the researcher assumed single-user and understated it.
+- The Settings copy of the SQL had already drifted, so users pasting from the app
+  installed the old policies even after the file was fixed. One source removes
+  that whole class of failure.
+
+### What was rejected and why
+
+- **Locking down `vault_config` only** (Edge Function for DEK handling):
+  rejected. It closes the worst hole but leaves credential rows readable and
+  deletable by anyone with the anon key, so the advertised per-user isolation
+  would still be fiction.
+- **Docs-only fix** (keep the schema, correct the README): rejected. It is
+  honest but means walking back RLS, zero-knowledge and per-user isolation as
+  features rather than delivering them.
+- **Keeping `bcrypt_hash` alongside the wrapped DEK**: rejected. With a wrapped
+  DEK the unwrap *is* the passphrase check, so the hash verifies nothing and is
+  just an offline-crackable artifact sitting in the database.
+- **Making the live DEK extractable** to simplify passphrase change: rejected.
+  `changePassphrase` re-unwraps from the stored wrapped DEK using the current
+  passphrase instead, so the in-memory key stays non-extractable and XSS cannot
+  read it back out of the `CryptoKey`.
+- **`maybeSingle()` in VaultStorage**: rejected. The SQLite and Neon builders
+  only implement `single()`, and all three providers report no-rows as
+  `PGRST116`.
+- **Deprecating browser-side Neon**: not done for this release. Documented
+  clearly instead, since removing it breaks existing users. Still worth
+  revisiting.
+- **Defaulting `isFirstTimeUser` to true on error**: removed. Guessing "new user"
+  when the vault merely failed to load invites the user to create a fresh vault
+  over one that already exists.
+
+### Verification
+
+`tests/rls/` applies the real shipped `supabase-setup.sql` to a throwaway
+Postgres behind a Supabase auth shim and asserts the actual behaviour. It was
+counter-tested: reintroducing `USING (true)` makes it exit non-zero, and the
+original configuration was reproduced to confirm anon really could read the DEK.
+Run with `npm run test:rls`. Unit tests went 97 -> 123.
+
+
 ## 2026-06-14: PostHog Docs Site Analytics Setup
 
 ### What was decided
