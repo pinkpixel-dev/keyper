@@ -43,6 +43,14 @@ describe('DEK wrapping with real PBKDF2', () => {
     });
   });
 
+  it('does not fall back when a stored wrapper requires Argon2id', async () => {
+    const wrapped = await wrapDEK(generateDEKBytes(), PASSPHRASE);
+
+    await expect(unwrapDEK({ ...wrapped, kdf: 'argon2id' }, PASSPHRASE)).rejects.toMatchObject({
+      type: CryptoErrorType.KEY_DERIVATION_FAILED,
+    });
+  });
+
   it('protects real ciphertext end to end', async () => {
     const dek = generateDEKBytes();
     const wrapped = await wrapDEK(dek, PASSPHRASE);

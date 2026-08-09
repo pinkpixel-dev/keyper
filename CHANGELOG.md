@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-08-09 - 🔑 **Cross-Runtime Vault Unlock**
+
+### 🗄️ Database Settings
+
+- **Added** A **Database Connection** card in Dashboard Settings showing the active provider, the endpoint or local database it is using, and the signed-in account on Supabase.
+- **Added** **Disconnect & reconfigure**, restoring the way back to the setup screen so you can switch database or provider without clearing browser storage by hand. It signs you out, locks the vault, forgets the connection details on this device, and keeps your theme and font. Nothing stored in the database is deleted.
+- **Changed** Renamed the **Database SQL** tab to **Database**, which now holds both the connection card and the setup script.
+- **Removed** Two unused reset handlers left behind when the old Reset Local Configuration card was taken out. One of them called `localStorage.clear()`, which also discarded theme and font preferences.
+
+### 🔑 Passphrase Settings
+
+- **Changed** Renamed the **Reset Options** tab to **Passphrase**. Naming it "Reset" next to a passphrase that cannot be reset was the source of the confusion.
+- **Changed** Moved the "there is no reset" warning out of the Change Master Passphrase card and into the recovery card below it, where it is actually about recovery. The change card now explains what changing does: it re-wraps the existing vault key, so nothing is re-encrypted.
+- **Added** Plain wording separating the two secrets. The account password gets you your encrypted rows and is resettable by email; the master passphrase decrypts them and is not.
+
+### 📱 Mobile
+
+- **Fixed** The Dashboard Settings tabs ran into each other at 375px. Five labels in a fixed five-column grid now wrap into rows, and **User Management** is shortened to **Users** so no tab label wraps.
+
+### 🐛 Fixes
+
+- **Fixed** Vault unlock now uses the KDF recorded in `wrapped_dek`. A PBKDF2 vault no longer appears to have the wrong passphrase when another runtime can load Argon2id.
+- **Fixed** New wrapped keys now record the KDF that actually derived the wrapping key. A failed Argon2id attempt can no longer produce a PBKDF2 wrapper labeled as Argon2id.
+- **Changed** A vault that requires Argon2id now reports that Argon2id is unavailable instead of silently trying PBKDF2 and reporting an invalid passphrase.
+- **Fixed** The Supabase connection test now checks the Auth service instead of making an anonymous query against a protected table.
+- **Changed** Connection errors now distinguish a rejected key, missing Auth endpoint, temporary service error, and unreachable endpoint.
+
+### 🎨 Dark Theme
+
+- **Changed** The standard dark theme now uses a near-black `#090909` surface instead of pure black.
+
+### 🧪 Testing
+
+- **Added** Cross-runtime coverage for a stored PBKDF2 wrapper while Argon2id is available.
+- **Added** Coverage that prevents an Argon2id wrapper from falling back to PBKDF2.
+- **Added** Real HTTP coverage for the Supabase Auth connection check, including request headers, URL handling, and common errors.
+- **Added** Coverage for `disconnectDatabase`, checking that every provider key is cleared and that unrelated preferences such as theme and font survive.
+
+### 🏷️ Versioning
+
+- **Changed** Version from `1.3.0` to `1.3.1`.
+
 ## [1.3.0] - 2026-08-09 - 🔐 **Accounts, Owner-Scoped Database Rules & Wrapped Vault Key**
 
 Keyper now signs you in to a real account before opening your vault, and stores

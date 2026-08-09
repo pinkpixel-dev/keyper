@@ -39,7 +39,7 @@ import {
  clearSupabaseCredentials,
  clearNeonCredentials,
  clearSqliteDatabasePath,
- createTestSupabaseClient,
+ testSupabaseProviderConnection,
  testNeonProviderConnection,
  saveNeonCredentials,
  testSqliteProviderConnection,
@@ -128,23 +128,14 @@ export const Settings: React.FC<SettingsProps> = ({ onConfigurationComplete}) =>
  throw new Error('Please enter both Supabase URL and API key');
 }
 
- console.log('Testing connection with:', {
- url: supabaseUrl,
- keyLength: supabaseKey.length,
- username: username || 'self-hosted-user'
-});
-
- const testClient = createTestSupabaseClient(supabaseUrl, supabaseKey);
- const { error} = await testClient
- .from('credentials')
- .select('count', { count: 'exact', head: true});
+ const { error} = await testSupabaseProviderConnection(supabaseUrl, supabaseKey);
 
  if (error) {
- throw new Error(`Database connection failed: ${error.message}`);
+ throw new Error(error.message);
 }
 
  const finalUsername = username.trim() || 'self-hosted-user';
- saveSupabaseCredentials(supabaseUrl, supabaseKey, finalUsername);
+ saveSupabaseCredentials(supabaseUrl.trim(), supabaseKey.trim(), finalUsername);
 }
 
  setConnectionStatus('success');

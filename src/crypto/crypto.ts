@@ -23,7 +23,6 @@ import { CryptoErrorType, CryptoError } from "./types";
 type Argon2BrowserModule = typeof import("argon2-browser/dist/argon2-bundled.min.js")["default"];
 
 let argon2Module: Argon2BrowserModule | null = null;
-let argon2Available = false;
 
 const MIN_PASSPHRASE_LENGTH = 8;
 
@@ -51,19 +50,6 @@ function toError(error: unknown): Error | undefined {
   return error instanceof Error ? error : undefined;
 }
 
-function shouldFallbackToPBKDF2(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  return (
-    error.message.includes("Cannot resolve module") ||
-    error.message.includes("Failed to fetch") ||
-    error.message.includes("Failed to parse URL") ||
-    error.message.includes("not supported")
-  );
-}
-
 async function loadArgon2Module(): Promise<Argon2BrowserModule | null> {
   if (argon2Module) {
     return argon2Module;
@@ -72,10 +58,8 @@ async function loadArgon2Module(): Promise<Argon2BrowserModule | null> {
   try {
     const mod = await import("argon2-browser/dist/argon2-bundled.min.js");
     argon2Module = mod.default ?? mod;
-    argon2Available = true;
     return argon2Module;
   } catch {
-    argon2Available = false;
     return null;
   }
 }
@@ -143,10 +127,12 @@ async function deriveKeyPBKDF2(passphrase: string, salt: Uint8Array): Promise<Cr
  */
 async function deriveKeyArgon2(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
   try {
-    // Check if argon2 is available, if not fall back to PBKDF2
     const loadedModule = await loadArgon2Module();
     if (!loadedModule) {
-      return await deriveKeyPBKDF2(passphrase, salt);
+      throw new CryptoError(
+        CryptoErrorType.KEY_DERIVATION_FAILED,
+        "Argon2id is unavailable in this runtime"
+      );
     }
 
     // Perform Argon2id key derivation
@@ -164,9 +150,8 @@ async function deriveKeyArgon2(passphrase: string, salt: Uint8Array): Promise<Cr
     const rawKey: Uint8Array = result.hash;
     return await importAesKey(rawKey.buffer);
   } catch (error) {
-    // If Argon2 fails, fall back to PBKDF2
-    if (shouldFallbackToPBKDF2(error)) {
-      return await deriveKeyPBKDF2(passphrase, salt);
+    if (error instanceof CryptoError) {
+      throw error;
     }
     throw new CryptoError(
       CryptoErrorType.KEY_DERIVATION_FAILED,
@@ -183,19 +168,40 @@ export async function deriveKey(passphrase: string, salt: Uint8Array): Promise<K
   assertValidPassphrase(passphrase);
 
   try {
-    // Try Argon2id first (preferred)
     const key = await deriveKeyArgon2(passphrase, salt);
-
-    // Check if we actually used Argon2 or fell back to PBKDF2
-    if (argon2Available && argon2Module) {
-      return { key, kdf: "argon2id" };
-    } else {
-      return { key, kdf: "pbkdf2" };
-    }
-  } catch (error) {
-    // Absolute fallback to PBKDF2
+    return { key, kdf: "argon2id" };
+  } catch {
     const key = await deriveKeyPBKDF2(passphrase, salt);
     return { key, kdf: "pbkdf2" };
+  }
+}
+
+/**
+ * Derive a key with the algorithm recorded beside existing ciphertext.
+ *
+ * Decryption must never auto-select a different fallback algorithm. PBKDF2 and
+ * Argon2id produce unrelated keys from the same passphrase and salt, so using
+ * the runtime's preferred algorithm would make a valid passphrase look wrong.
+ */
+export async function deriveKeyForKdf(
+  passphrase: string,
+  salt: Uint8Array,
+  kdf: KdfName,
+): Promise<CryptoKey> {
+  assertValidPassphrase(passphrase);
+
+  if (kdf === "pbkdf2") {
+    return deriveKeyPBKDF2(passphrase, salt);
+  }
+
+  try {
+    return await deriveKeyArgon2(passphrase, salt);
+  } catch (error) {
+    throw new CryptoError(
+      CryptoErrorType.KEY_DERIVATION_FAILED,
+      "This vault uses Argon2id, but Keyper could not load Argon2id in this runtime",
+      toError(error)
+    );
   }
 }
 

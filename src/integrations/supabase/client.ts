@@ -325,6 +325,110 @@ export const createTestSupabaseClient = (url: string, key: string) => {
   });
 };
 
+export const testSupabaseProviderConnection = async (
+  url: string,
+  key: string,
+): Promise<DbResponse<{ endpoint: string }>> => {
+  const trimmedUrl = url.trim();
+  const trimmedKey = key.trim();
+
+  if (!trimmedUrl || !trimmedKey) {
+    return {
+      data: null,
+      error: { message: 'Supabase URL and API key are required.' },
+    };
+  }
+
+  let projectUrl: URL;
+  try {
+    projectUrl = new URL(trimmedUrl);
+  } catch {
+    return {
+      data: null,
+      error: { message: 'Enter a valid Supabase URL, including http:// or https://.' },
+    };
+  }
+
+  if (!['http:', 'https:'].includes(projectUrl.protocol)) {
+    return {
+      data: null,
+      error: { message: 'Supabase URL must use http:// or https://.' },
+    };
+  }
+
+  projectUrl.search = '';
+  projectUrl.hash = '';
+  if (!projectUrl.pathname.endsWith('/')) {
+    projectUrl.pathname += '/';
+  }
+
+  const endpoint = new URL('auth/v1/settings', projectUrl);
+
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        apikey: trimmedKey,
+        Authorization: `Bearer ${trimmedKey}`,
+      },
+      cache: 'no-store',
+    });
+  } catch {
+    return {
+      data: null,
+      error: {
+        message: 'Could not reach Supabase Auth. Check the URL, network connection, CORS, and app security settings.',
+      },
+    };
+  }
+
+  if (!response.ok) {
+    let message: string;
+    if (response.status === 401 || response.status === 403) {
+      message = 'Supabase rejected this publishable or anon API key.';
+    } else if (response.status === 404) {
+      message = 'Supabase Auth was not found at this project URL.';
+    } else if (response.status === 429) {
+      message = 'Supabase is rate limiting connection tests. Please try again shortly.';
+    } else if (response.status >= 500) {
+      message = `Supabase Auth is temporarily unavailable (HTTP ${response.status}).`;
+    } else {
+      message = `Supabase Auth rejected the connection test (HTTP ${response.status}).`;
+    }
+
+    return { data: null, error: { message } };
+  }
+
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  let settings: unknown;
+  try {
+    settings = await response.json();
+  } catch {
+    return {
+      data: null,
+      error: {
+        message: contentType.includes('application/json')
+          ? 'The project URL returned an invalid Supabase Auth response.'
+          : 'The project URL did not return a Supabase Auth response.',
+      },
+    };
+  }
+
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return {
+      data: null,
+      error: { message: 'The project URL returned an invalid Supabase Auth response.' },
+    };
+  }
+
+  return {
+    data: { endpoint: endpoint.toString() },
+    error: null,
+  };
+};
+
 export const initializeSqliteProvider = async (dbPath?: string): Promise<DbResponse<{ path?: string }>> => {
   return initializeSqliteDatabase(dbPath || getSqliteDatabasePath());
 };
@@ -338,6 +442,30 @@ export const testNeonProviderConnection = async (
   mode = getNeonMode(),
 ): Promise<DbResponse<{ mode: NeonMode }>> => {
   return testNeonConnection({ connectionString, mode });
+};
+
+/**
+ * Forget the current database configuration so the app returns to setup.
+ *
+ * Only the provider keys go. An earlier version of this called
+ * localStorage.clear(), which also threw away the theme and font the user had
+ * picked — unrelated state that has nothing to do with which database they
+ * point at. Nothing stored in the database itself is touched: the encrypted
+ * rows stay exactly where they are, and reconnecting to the same database
+ * brings them all back.
+ */
+export const disconnectDatabase = (): boolean => {
+  if (!isBrowser()) return false;
+  try {
+    clearSupabaseCredentials();
+    clearNeonCredentials();
+    clearSqliteDatabasePath();
+    localStorage.removeItem(DB_PROVIDER_KEY);
+    return true;
+  } catch (error) {
+    console.error('Error disconnecting database:', error);
+    return false;
+  }
 };
 
 // Function to refresh the active client after credentials/provider change

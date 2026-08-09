@@ -45,13 +45,13 @@
   }
 
   .dark {
-    --background: 0 0% 0%;
+    --background: 0 0% 3.5%;
     --foreground: 210 40% 98%;
 
-    --card: 0 0% 0%;
+    --card: 0 0% 3.5%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 0 0% 0%;
+    --popover: 0 0% 3.5%;
     --popover-foreground: 210 40% 98%;
 
     --primary: 188 95% 52%;
@@ -75,7 +75,7 @@
 
     --radius: 0.5rem;
 
-    --sidebar-background: 0 0% 0%;
+    --sidebar-background: 0 0% 3.5%;
     --sidebar-foreground: 210 40% 98%;
     --sidebar-primary: 188 95% 52%;
     --sidebar-primary-foreground: 0 0% 0%;
@@ -398,7 +398,7 @@
 }
 
 .theme-swatch-dark {
-  background: linear-gradient(135deg, #000000 0 50%, #22d3ee 50% 100%);
+  background: linear-gradient(135deg, #090909 0 50%, #22d3ee 50% 100%);
 }
 
 .theme-swatch-system {

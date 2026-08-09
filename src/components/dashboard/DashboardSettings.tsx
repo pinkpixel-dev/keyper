@@ -8,16 +8,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger} from '@/components/ui/tabs';
 import { Separator} from '@/components/ui/separator';
 import {
  Shield,
- Trash2,
  Settings,
- RefreshCw,
- AlertTriangle,
  Info,
  Database,
- Key,
+ KeyRound,
  Users,
- Copy,
- ExternalLink,
  Palette,
  Circle,
  Moon,
@@ -25,9 +20,10 @@ import {
  Monitor
 } from 'lucide-react';
 import { useToast} from '@/hooks/use-toast';
-import { getCurrentUsername, clearSupabaseCredentials, getDatabaseProvider, getNeonMode} from '@/integrations/supabase/client';
+import { getCurrentUsername} from '@/integrations/supabase/client';
 import { THEME_OPTIONS} from '@/lib/theme-options';
 import UserSwitcher from '@/components/UserSwitcher';
+import DatabaseConnectionCard from '@/components/dashboard/settings/DatabaseConnectionCard';
 import DatabaseSqlCard from '@/components/dashboard/settings/DatabaseSqlCard';
 import ChangePassphraseCard from '@/components/dashboard/settings/ChangePassphraseCard';
 import ResetVaultCard from '@/components/dashboard/settings/ResetVaultCard';
@@ -41,8 +37,6 @@ interface DashboardSettingsProps {
 export const DashboardSettings: React.FC<DashboardSettingsProps> = ({ onUserContextChanged}) => {
  const { toast} = useToast();
  const currentUser = getCurrentUsername();
- const dbProvider = getDatabaseProvider();
- const neonMode = getNeonMode();
 
  const { theme, setTheme} = useTheme();
  const [currentFont, setCurrentFont] = useState(() => localStorage.getItem('keyper-font-preference') || 'font-sans');
@@ -70,37 +64,6 @@ export const DashboardSettings: React.FC<DashboardSettingsProps> = ({ onUserCont
 });
 };
 
- const handleResetLocalData = () => {
- if (confirm('This will clear all local configuration and require database setup again. Continue?')) {
- clearSupabaseCredentials();
- localStorage.clear();
- toast({
- title:"Local Data Cleared",
- description:"All local configuration has been reset. Please refresh the page.",
-});
- setTimeout(() => window.location.reload(), 2000);
-}
-};
-
- const handleClearBrowserCache = () => {
- const instructions = `To completely reset Keyper:
-
-1. Open browser settings
-2. Go to Privacy/Security section
-3. Clear browsing data/storage
-4. Select"Cookies and site data" and"Cached files"
-5. Choose"All time" as time range
-6. Click Clear data
-7. Refresh this page`;
-
- navigator.clipboard.writeText(instructions);
- toast({
- title:"Instructions Copied",
- description:"Browser cache clearing instructions copied to clipboard",
-});
-};
-
-
  return (
  <div className="max-w-4xl mx-auto p-6 space-y-6">
  <div className="flex items-center gap-3 mb-6">
@@ -112,24 +75,27 @@ export const DashboardSettings: React.FC<DashboardSettingsProps> = ({ onUserCont
  </div>
 
  <Tabs defaultValue="users" className="space-y-6">
- <TabsList className="grid w-full grid-cols-5">
- <TabsTrigger value="users" className="flex items-center gap-2">
- <Users className="h-4 w-4" />
- User Management
+ {/* Five labels do not fit across a phone. A fixed five-column grid ran
+ them into each other at 375px, so they wrap into rows instead and the
+ list grows to match. */}
+ <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-5">
+ <TabsTrigger value="users" className="flex items-center gap-2 px-2 text-xs sm:px-3 sm:text-sm">
+ <Users className="h-4 w-4 shrink-0" />
+ Users
  </TabsTrigger>
- <TabsTrigger value="database-sql" className="flex items-center gap-2">
+ <TabsTrigger value="database" className="flex items-center gap-2 px-2 text-xs sm:px-3 sm:text-sm">
  <Database className="h-4 w-4" />
- Database SQL
+ Database
  </TabsTrigger>
- <TabsTrigger value="reset" className="flex items-center gap-2">
- <RefreshCw className="h-4 w-4" />
- Reset Options
+ <TabsTrigger value="passphrase" className="flex items-center gap-2 px-2 text-xs sm:px-3 sm:text-sm">
+ <KeyRound className="h-4 w-4" />
+ Passphrase
  </TabsTrigger>
- <TabsTrigger value="system" className="flex items-center gap-2">
+ <TabsTrigger value="system" className="flex items-center gap-2 px-2 text-xs sm:px-3 sm:text-sm">
  <Info className="h-4 w-4" />
  About
  </TabsTrigger>
- <TabsTrigger value="appearance" className="flex items-center gap-2">
+ <TabsTrigger value="appearance" className="flex items-center gap-2 px-2 text-xs sm:px-3 sm:text-sm">
  <Palette className="h-4 w-4" />
  Appearance
  </TabsTrigger>
@@ -255,18 +221,20 @@ export const DashboardSettings: React.FC<DashboardSettingsProps> = ({ onUserCont
  <li>• Each account has its own vault and its own encryption key material.</li>
  <li>• On Supabase, the database keeps each account to its own rows. It is not the app choosing what to show you.</li>
  <li>• Signing in gets you your encrypted rows. Your master passphrase is still required to read them.</li>
- <li>• There is no passphrase reset. It can be changed if you know the current one, under the Reset tab.</li>
+ <li>• Two different secrets: your account password is resettable by email, your master passphrase is not.</li>
+ <li>• The master passphrase can still be changed if you know the current one, under the Passphrase tab.</li>
  </ul>
  </div>
  </CardContent>
  </Card>
  </TabsContent>
 
-      <TabsContent value="database-sql" className="space-y-6">
+      <TabsContent value="database" className="space-y-6">
+        <DatabaseConnectionCard />
         <DatabaseSqlCard />
       </TabsContent>
 
-      <TabsContent value="reset" className="space-y-6">
+      <TabsContent value="passphrase" className="space-y-6">
         <ChangePassphraseCard />
         <ResetVaultCard />
       </TabsContent>

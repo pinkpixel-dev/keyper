@@ -10,7 +10,7 @@ export const THEME_OPTIONS = [
   {
     value: 'dark',
     label: 'Dark',
-    description: 'Pure black vault',
+    description: 'Near-black vault',
     swatchClass: 'theme-swatch-dark',
   },
   {

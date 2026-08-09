@@ -300,9 +300,9 @@ CREATE TABLE vault_config (
   owner_id UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL DEFAULT 'self-hosted-user',  -- display label only
 
-  -- The DEK, stored ONLY wrapped: AES-GCM encrypted under an Argon2id key
-  -- derived from the master passphrase. There is no other copy and no verifier
-  -- hash, so nothing here decrypts without the passphrase.
+  -- The DEK, stored ONLY wrapped: AES-GCM encrypted under a key derived from
+  -- the master passphrase with Argon2id or the recorded PBKDF2 fallback. There
+  -- is no other copy and no verifier hash.
   wrapped_dek JSONB,
 
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -341,6 +341,14 @@ CREATE TABLE categories (
 - ✅ **Automatic triggers** for timestamp maintenance
 - ✅ **Helper functions** for statistics and verification
 
+The wrapped vault key records its KDF. Unlock always uses that recorded value,
+so a PBKDF2 wrapper remains readable when another runtime supports Argon2id.
+Keyper never substitutes one KDF for the other during decryption.
+
+The Supabase connection test calls the read-only Auth settings endpoint. It
+checks the project URL and publishable key without requesting protected table
+data. Database grants and RLS can therefore stay closed to anonymous users.
+
 ---
 
 ## 🎨 User Interface
@@ -348,6 +356,7 @@ CREATE TABLE categories (
 ### Design System
 
 - **Theme**: Light, dark, system, charcoal, medium gray, light gray, warm light, blue, midnight blue, and deep purple modes powered by `next-themes`
+- **Dark surface**: The standard dark theme uses `#090909` instead of pure black
 - **Colors**: CSS-variable palettes with semantic color coding and adaptive dashboard accents
 - **Typography**: Inter, Roboto, Outfit, Playfair Display, and Fira Code application font choices stored as local preferences
 - **Layout**: Responsive grid system with mobile-first approach
@@ -360,7 +369,11 @@ CREATE TABLE categories (
 | **PassphraseGate**    | Vault security checkpoint | Unlock flow + create-new-user entrypoint        |
 | **UserRegistration**  | New account onboarding    | Username validation + passphrase confirmation   |
 | **UserSwitcher**      | Multi-user controls       | Registered-user list + secure context switching |
-| **DashboardSettings** | Settings shell            | User Management, appearance themes, security messaging |
+| **DashboardSettings** | Settings shell            | Tabs: Users, Database, Passphrase, About, Appearance |
+| **DatabaseConnectionCard** | Active connection    | Provider/endpoint readout + disconnect and reconfigure |
+| **DatabaseSqlCard**   | Setup script              | Provider-matched SQL, copied straight from the repo files |
+| **ChangePassphraseCard** | Master passphrase change | Requires the current one; re-wraps the vault key |
+| **ResetVaultCard**    | Unrecoverable restart     | Explains why there is no reset; typed confirmation to delete |
 | **DashboardHeader**   | Navigation and branding   | Search, user profile, actions                   |
 | **CredentialsGrid**   | Main credential display   | Filtering, sorting, infinite scroll             |
 | **CredentialModal**   | Detailed credential view  | Reveal, copy, edit, delete actions              |
@@ -522,7 +535,7 @@ npm run electron:build:win     # NSIS / Windows build tooling required
 
 ### Version Information
 
-- **Current Version**: 1.3.0
+- **Current Version**: 1.3.1
 - **Release Date**: August 2026
 - **Last Updated**: August 2026
 - **Status**: Stable Production Release 🟢

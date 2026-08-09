@@ -46,6 +46,39 @@ describe('wrapDEK / unwrapDEK', () => {
     expect(Array.from(recovered)).toEqual(Array.from(dek));
   });
 
+  it('honors a stored PBKDF2 marker when Argon2id is available', async () => {
+    const dek = generateDEKBytes();
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(PASSPHRASE),
+      'PBKDF2',
+      false,
+      ['deriveKey'],
+    );
+    const pbkdf2Key = await crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt, iterations: 310_000, hash: 'SHA-256' },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt'],
+    );
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, pbkdf2Key, dek);
+    const wrapped = {
+      v: 1 as const,
+      kdf: 'pbkdf2' as const,
+      salt: bufToBase64(salt.buffer as ArrayBuffer),
+      iv: bufToBase64(iv.buffer as ArrayBuffer),
+      ct: bufToBase64(ciphertext),
+    };
+
+    expect(Array.from(await unwrapDEK(wrapped, PASSPHRASE))).toEqual(Array.from(dek));
+    await expect(unwrapDEK(wrapped, WRONG_PASSPHRASE)).rejects.toMatchObject({
+      type: CryptoErrorType.INVALID_PASSPHRASE,
+    });
+  });
+
   it('rejects the wrong passphrase instead of returning garbage', async () => {
     const wrapped = await wrapDEK(generateDEKBytes(), PASSPHRASE);
 

@@ -17,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { vaultManager } from '@/services/VaultManager';
 import { useToast } from '@/hooks/use-toast';
+import { isAuthRequired } from '@/integrations/supabase/auth';
 import { AlertTriangle, Loader2, RotateCcw } from 'lucide-react';
 
 const CONFIRM_PHRASE = 'DELETE MY VAULT';
@@ -66,17 +67,25 @@ export default function ResetVaultCard() {
           <AlertTriangle className="h-4 w-4" aria-hidden="true" />
           <AlertDescription>
             <p>
-              Your credentials are encrypted with a key that only your master
-              passphrase can unlock. Nothing stored in the database, and nothing we
-              hold, can open it without that passphrase. That is the point of the
-              design, and it means a forgotten passphrase cannot be recovered by
-              anyone.
+              <strong>There is no passphrase reset.</strong> Your credentials are
+              encrypted with a key that only your master passphrase can unlock.
+              Nothing stored in the database, and nothing we hold, can open it
+              without that passphrase. That is exactly what stops a stolen copy of
+              your database from being readable, and it means a forgotten
+              passphrase cannot be recovered by anyone.
             </p>
             <p className="pt-2">
               If you still know your current passphrase and simply want a different
               one, use <strong>Change Master Passphrase</strong> above. That keeps
               all your credentials.
             </p>
+            {isAuthRequired() && (
+              <p className="pt-2">
+                Locked out of your <em>account</em> instead? That is the email and
+                password you sign in with, and it is a separate secret. Sign out
+                and use the forgot-password link on the sign-in screen.
+              </p>
+            )}
           </AlertDescription>
         </Alert>
 

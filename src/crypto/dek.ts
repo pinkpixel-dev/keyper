@@ -14,7 +14,7 @@
  * Made with ❤️ by Pink Pixel ✨
  */
 
-import { deriveKey } from './crypto';
+import { deriveKey, deriveKeyForKdf } from './crypto';
 import { bufToBase64, base64ToBuf, randomBytes } from './encoding';
 import { CryptoError, CryptoErrorType } from './types';
 
@@ -108,9 +108,10 @@ export async function unwrapDEK(wrapped: WrappedDEK, passphrase: string): Promis
   const iv = new Uint8Array(base64ToBuf(wrapped.iv));
   const ciphertext = base64ToBuf(wrapped.ct);
 
-  // deriveKey enforces the minimum passphrase length, so a too-short input
-  // surfaces as INVALID_PASSPHRASE before we ever attempt decryption.
-  const { key: kek } = await deriveKey(passphrase, salt);
+  // The wrapper records the KDF used at encryption time. Honor it exactly:
+  // choosing a runtime-dependent fallback here derives a different key and
+  // makes the correct passphrase look invalid across browser or desktop builds.
+  const kek = await deriveKeyForKdf(passphrase, salt, wrapped.kdf);
 
   try {
     const dekBytes = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, kek, ciphertext);

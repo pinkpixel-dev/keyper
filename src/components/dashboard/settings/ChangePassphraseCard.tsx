@@ -23,7 +23,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { vaultManager } from '@/services/VaultManager';
 import { useToast } from '@/hooks/use-toast';
 import { analyzePassphrase } from '@/security/PassphraseValidator';
-import { AlertTriangle, Check, Eye, EyeOff, KeyRound, Loader2 } from 'lucide-react';
+import { AlertTriangle, Check, Eye, EyeOff, Info, KeyRound, Loader2 } from 'lucide-react';
 
 const MIN_LENGTH = 8;
 
@@ -87,19 +87,20 @@ export default function ChangePassphraseCard() {
           Change Master Passphrase
         </CardTitle>
         <CardDescription>
-          Your master passphrase is what decrypts your credentials. You can change
-          it here as long as you know the current one.
+          Your master passphrase is what decrypts your credentials, and it is not
+          the same thing as your account password. Change it here as long as you
+          know the current one.
         </CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-4">
         <Alert>
-          <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+          <Info className="h-4 w-4" aria-hidden="true" />
           <AlertDescription>
-            <strong>There is no reset.</strong> Nothing stored anywhere can recover
-            this passphrase, which is what stops a copy of the database from
-            decrypting your vault. If you lose it, the vault cannot be recovered.
-            Keep a copy somewhere safe.
+            This re-wraps your existing vault key, so nothing is re-encrypted and
+            every stored credential keeps working. Write the new passphrase down
+            somewhere safe before you continue — once it changes, the old one
+            stops opening the vault.
           </AlertDescription>
         </Alert>
 

@@ -1,5 +1,56 @@
 # MEMORY.md
 
+## 2026-08-09: Auth-Based Connection Test and Near-Black Dark Theme (v1.3.1)
+
+### What was decided
+
+- The Supabase connection test uses `GET /auth/v1/settings` with the configured
+  publishable or anon key.
+- The connection test does not query Keyper tables or require a user session.
+- The standard dark theme uses a `#090909` base surface instead of pure black.
+
+### Why
+
+- Version 1.3.0 removed all anonymous table privileges. The old connection test
+  treated that expected security rule as a connection failure.
+- The Auth settings route checks the project URL and key without weakening RLS.
+- The near-black surface reduces the harsh contrast of the standard dark theme.
+
+### What was rejected and why
+
+- **Treating a table permission error as success:** rejected because the test
+  would still depend on PostgREST errors and Keyper's schema.
+- **Requiring sign-in before the connection test:** rejected because initial
+  database configuration must work before account sign-in.
+- **Changing the charcoal theme:** rejected because the request applies only to
+  the standard dark theme.
+
+## 2026-08-09: Stored KDF Controls Vault Unlock (v1.3.1)
+
+### What was decided
+
+- Vault unwrap uses the `kdf` value stored in `wrapped_dek`.
+- New wrappers record the KDF branch that actually succeeded.
+- A stored Argon2id wrapper fails with a derivation error when Argon2id is not
+  available. It never falls back to PBKDF2 during decryption.
+
+### Why
+
+- PBKDF2 and Argon2id derive different keys from the same passphrase and salt.
+  Runtime-dependent selection made a correct passphrase fail outside the
+  runtime that created the wrapper.
+- A migrated production vault confirmed this condition: ownership was correct,
+  the wrapper was valid, and its stored KDF was PBKDF2.
+
+### What was rejected and why
+
+- **Automatic KDF selection during unwrap:** rejected because decryption must
+  reproduce the algorithm used for encryption.
+- **Silent alternate-KDF recovery:** rejected because it hides malformed or
+  mislabeled wrappers and can report misleading passphrase errors.
+- **Database rewrapping:** rejected because the stored wrapper is valid. The
+  client only needs to derive the correct key.
+
 ## 2026-08-09: Authenticated RLS + Passphrase-Wrapped Vault Key (v1.3.0)
 
 Prompted by a private report from Cenk Kurtoglu (github.com/cekuu35), sent by
@@ -118,3 +169,42 @@ Run with `npm run test:rls`. Unit tests went 97 -> 123.
 
 ### What was rejected and why
 - **Traditional HTML tables (`<table>`)**: Rejected because table rendering on mobile requires heavy responsive restructuring (e.g. converting `display: table` to `display: block`). Flexbox layouts are more natively fluid and responsive.
+
+## 2026-08-09: Database Disconnect Restored, Passphrase Settings Renamed
+
+### What was decided
+- Reinstate a way to disconnect the database from Dashboard Settings, as a new
+  `DatabaseConnectionCard` on the renamed **Database** tab (was "Database SQL").
+  It shows the active provider and endpoint, then signs out, clears vault state
+  and removes only the provider keys via a new `disconnectDatabase()` helper.
+- Rename the **Reset Options** tab to **Passphrase**, move the "there is no
+  reset" warning out of the change form and into the recovery card beneath it.
+- Wrap the settings tabs into rows below `lg` and shorten "User Management" to
+  "Users" so no tab label collides or wraps at 375px.
+
+### Why
+- Commit `4fde4a7` removed the old Reset Local Configuration card, leaving no
+  route back to setup. Switching provider meant clearing browser storage by
+  hand, and the dead `handleResetLocalData`/`handleClearBrowserCache` handlers
+  sat unused in `DashboardSettings.tsx` afterwards.
+- A tab called "Reset Options" containing a card that changes the passphrase and
+  an alert saying it cannot be reset reads as a contradiction. Both statements
+  are true; they were just filed under the wrong heading. The account password
+  is resettable, the master passphrase is changeable but not recoverable, and
+  the UI now says which is which.
+
+### What was rejected and why
+- **Restoring the old handler as-is**: rejected. It called `localStorage.clear()`,
+  which also discarded theme and font preferences that have nothing to do with
+  the database. `disconnectDatabase()` removes only provider keys, and a test
+  pins that behaviour.
+- **Requiring a typed confirmation to disconnect**: rejected as
+  disproportionate. Disconnecting deletes nothing; the encrypted rows stay in
+  the database and reconnecting restores them. The typed phrase stays where it
+  belongs, on vault deletion.
+- **Removing the passphrase change to make "no reset" unambiguous**: rejected.
+  Changing re-wraps the same DEK and requires the current passphrase, so it is
+  safe and useful. The confusion was wording, not the feature.
+- **Adding account email/password change in this pass**: deferred. It is a real
+  gap, but it is a new feature and belongs with the wider two-secret
+  documentation sweep.
