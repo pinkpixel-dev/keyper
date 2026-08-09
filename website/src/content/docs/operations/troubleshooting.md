@@ -23,14 +23,15 @@ description: Common issues and practical recovery paths.
 
 ## Vault unlock fails
 
-- Verify username context is correct.
-- If you recently switched users, use **User Management** again and retry unlock for the intended account.
-- Verify passphrase against current `vault_config` row for that `user_id`.
-- For new format vaults, ensure `bcrypt_hash` and `raw_dek` both exist.
+- On Supabase, confirm you are signed in to the intended account. Signing out and back in is how you switch.
+- On SQLite or Neon, confirm the username on the unlock screen matches the vault you want.
+- Confirm a `vault_config` row exists for that owner and has a `wrapped_dek` value.
+- If Keyper shows the upgrade screen instead, the database still needs the 1.3.0 migration. See [Upgrading to 1.3.0](/getting-started/upgrading-to-1-3/).
 
-## New user registration fails
+## Sign-up fails
 
-- Confirm the username is unique in `vault_config.user_id`.
+- "Sign-ups are disabled on this Supabase project" means the Email provider is off. Enable it under Authentication → Providers.
+- On SQLite or Neon, a vault is created the first time you unlock with a new username.
 - Confirm username format: 3-50 chars, letters/numbers/hyphen/underscore.
 - Confirm passphrase is at least 8 characters and matches confirmation.
 - If registration started from User Management, allow the lock-screen reload and complete creation there.

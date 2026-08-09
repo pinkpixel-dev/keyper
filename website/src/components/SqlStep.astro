@@ -1,0 +1,139 @@
+---
+/**
+ * Renders one migration script with a copy button.
+ *
+ * The SQL is read from the repo at build time, so the docs can never drift from
+ * what actually ships. Same reason the app imports these files rather than
+ * holding its own copy.
+ */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+interface Props {
+  /** File name inside the repo's migration/ folder. */
+  file: string;
+  /** Short description of what this script does. */
+  label?: string;
+  /** Set when the script needs the user to edit something first. */
+  needsEdit?: boolean;
+}
+
+const { file, label, needsEdit = false } = Astro.props;
+
+// Resolved from the site root rather than from import.meta.url: at build time
+// this component is bundled into dist/, so a path relative to the module would
+// point at the wrong place. Astro runs with cwd set to the website directory.
+const sql = readFileSync(resolve(process.cwd(), '../migration', file), 'utf8');
+---
+
+<div class="sql-step" data-sql-step>
+  <div class="sql-step__header">
+    <div class="sql-step__title">
+      <code>{file}</code>
+      {needsEdit && <span class="sql-step__badge">needs one edit</span>}
+    </div>
+    <button type="button" class="sql-step__copy" data-copy aria-label={`Copy ${file}`}>
+      <span data-copy-label>Copy {file}</span>
+    </button>
+  </div>
+
+  {label && <p class="sql-step__label">{label}</p>}
+
+  <details>
+    <summary>Show the SQL</summary>
+    <pre><code>{sql}</code></pre>
+  </details>
+
+  <textarea data-sql hidden readonly>{sql}</textarea>
+</div>
+
+<style>
+  .sql-step {
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin: 1rem 0;
+  }
+  .sql-step__header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sql-step__title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .sql-step__badge {
+    font-size: 0.75rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 0.25rem;
+    background: var(--sl-color-accent-low);
+    color: var(--sl-color-accent-high);
+  }
+  .sql-step__label {
+    margin: 0.5rem 0 0;
+    font-size: 0.9rem;
+    color: var(--sl-color-gray-3);
+  }
+  .sql-step__copy {
+    background: var(--sl-color-accent);
+    color: var(--sl-color-black);
+    border: none;
+    border-radius: 0.35rem;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .sql-step__copy:hover {
+    background: var(--sl-color-accent-high);
+  }
+  .sql-step__copy:focus-visible {
+    outline: 2px solid var(--sl-color-white);
+    outline-offset: 2px;
+  }
+  .sql-step details {
+    margin-top: 0.75rem;
+  }
+  .sql-step summary {
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--sl-color-gray-3);
+  }
+  .sql-step pre {
+    max-height: 22rem;
+    overflow: auto;
+    font-size: 0.75rem;
+  }
+</style>
+
+<script>
+  document.querySelectorAll('[data-sql-step]').forEach((step) => {
+    const button = step.querySelector('[data-copy]');
+    const label = step.querySelector('[data-copy-label]');
+    const source = step.querySelector('[data-sql]');
+    if (!button || !label || !source) return;
+
+    const original = label.textContent;
+
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(source.value);
+        label.textContent = 'Copied';
+      } catch {
+        // Fall back to selecting the text so it can be copied manually.
+        source.hidden = false;
+        source.select();
+        label.textContent = 'Select and copy';
+      }
+      setTimeout(() => {
+        label.textContent = original;
+        source.hidden = true;
+      }, 2500);
+    });
+  });
+</script>

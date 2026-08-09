@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { VitePWA } from 'vite-plugin-pwa';
+import pkg from './package.json';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -75,6 +76,10 @@ export default defineConfig(({ mode }) => ({
     global: 'globalThis',
     // Polyfill Node.js modules for browser compatibility
     'process.env': {},
+    // Single source of truth for the version shown in the UI. Injected here so
+    // package.json is not bundled into the client and nothing has to be kept in
+    // sync by hand. Read it through src/lib/app-info.ts, never hardcode it.
+    __APP_VERSION__: JSON.stringify(pkg.version),
   },
   build: {
     // Increase chunk size warning limit

@@ -22,22 +22,53 @@ Stores metadata and encrypted credential payload:
 
 ### `vault_config`
 
-Stores vault unlock metadata by user:
+Stores the vault key for an account:
 
-- new format: `raw_dek`, `bcrypt_hash`
-- legacy format: `wrapped_dek`
-- unique per `user_id`
-- doubles as the registered-user index used by in-app User Management
+- `wrapped_dek`: the data encryption key, encrypted under a key derived from the
+  master passphrase. This is the only stored form of the key.
+- unique per `owner_id`
 
-Multi-user registration does not use an admin users table. A username is considered registered when a `vault_config` row exists for that `user_id`.
+Removed in 1.3.0: `raw_dek`, which held the key in directly usable form, and
+`bcrypt_hash`, a passphrase verifier that the unwrap step now replaces.
 
 ### `categories`
 
-Stores user/category metadata used by dashboard filtering.
+Stores category metadata used by dashboard filtering. Each account gets its own
+default set when its vault is created.
+
+## Ownership columns
+
+Supabase tables carry two ownership columns, and only one of them is a security
+boundary:
+
+- **`owner_id`** (uuid, references `auth.users`): the account that owns the row.
+  Every RLS policy scopes on this. Defaults to `auth.uid()`.
+- **`user_id`** (text): a display label, kept for compatibility. It is
+  user-supplied and unverified, and is never used for access control.
+
+SQLite and Neon have no `auth.users` to reference, so they continue to use
+`user_id` as the separator. Those modes run on your own machine or your own
+database, where the boundary is the file or the connection string.
 
 ## RLS behavior
 
-The Supabase and Neon setup scripts enable RLS on all three tables. Current self-hosted policies are permissive (`USING (true)`), while app-level filtering is performed by `user_id` in client queries.
+The Supabase setup script enables RLS on all three tables and scopes every policy
+to the signed-in owner:
+
+```sql
+CREATE POLICY "credentials_select_policy" ON credentials
+  FOR SELECT TO authenticated
+  USING (owner_id = (SELECT auth.uid()));
+```
+
+`TO authenticated` means an unauthenticated request matches no policy and reads
+nothing. The anon role additionally has its table privileges revoked.
+
+The Neon script does not create policies. A Neon connection string carries full
+database access and the role owns the tables, so policies there would not narrow
+anything down. The script says so rather than implying otherwise.
+
+Behaviour is verified against a real Postgres with `npm run test:rls`.
 
 ## Functions and triggers
 

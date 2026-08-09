@@ -19,7 +19,8 @@ import { Alert, AlertDescription} from '@/components/ui/alert';
 import { Switch} from '@/components/ui/switch';
 import { useToast} from '@/hooks/use-toast';
 import { useEncryption} from '@/hooks/useVault';
-import { supabase, getCurrentUsername} from '@/integrations/supabase/client';
+import { supabase} from '@/integrations/supabase/client';
+import { ownershipFields} from '@/integrations/supabase/auth';
 import { 
  Shield, 
  ShieldCheck, 
@@ -175,7 +176,7 @@ export default function EncryptedCredentialForm({
  setLoading(true);
  
  try {
- const currentUsername = getCurrentUsername();
+ const ownership = await ownershipFields();
  let credentialData: Record<string, unknown> = {
  title: formData.title.trim(),
  description: formData.description.trim() || null,
@@ -187,7 +188,7 @@ export default function EncryptedCredentialForm({
  notes: formData.notes.trim() || null,
  expires_at: formData.expires_at || null,
  tags,
- user_id: currentUsername,
+ ...ownership,
 };
 
  if (enableEncryption && hasSensitiveData()) {

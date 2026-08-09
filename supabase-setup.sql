@@ -12,12 +12,65 @@
 -- =====================================================
 
 -- ============================================================================
+-- 0. PRE-FLIGHT: REFUSE TO RUN OVER AN EXISTING VAULT
+-- ============================================================================
+--
+-- This script is for FRESH INSTALLS. Section 5 drops every policy on these
+-- tables and section 6 recreates them, so running it against a database that
+-- already holds credentials can lock you out of your own rows, and on a
+-- pre-1.3.0 database it will not add the ownership column your data needs.
+--
+-- If you already have a vault, stop here and run migration-auth-rls.sql instead.
+--
+-- This block aborts the whole script if it finds existing data. It is a guard,
+-- not an obstacle: on a genuinely empty database it does nothing at all.
+
+DO $$
+DECLARE
+  credential_count BIGINT := 0;
+  vault_count BIGINT := 0;
+BEGIN
+  IF to_regclass('public.credentials') IS NOT NULL THEN
+    EXECUTE 'SELECT COUNT(*) FROM public.credentials' INTO credential_count;
+  END IF;
+
+  IF to_regclass('public.vault_config') IS NOT NULL THEN
+    EXECUTE 'SELECT COUNT(*) FROM public.vault_config' INTO vault_count;
+  END IF;
+
+  IF credential_count > 0 OR vault_count > 0 THEN
+    RAISE EXCEPTION
+      E'\n\n'
+      '========================================================\n'
+      'STOPPED: this database already contains a Keyper vault.\n'
+      '========================================================\n'
+      'Found % credential row(s) and % vault config row(s).\n'
+      '\n'
+      'supabase-setup.sql is for fresh installs only. It drops and\n'
+      'recreates every RLS policy, which on an existing database can\n'
+      'leave you unable to read your own rows.\n'
+      '\n'
+      'To upgrade an existing vault, run migration-auth-rls.sql and\n'
+      'follow its stages in order.\n'
+      '\n'
+      'Nothing has been changed. Your data is untouched.\n'
+      '========================================================',
+      credential_count, vault_count;
+  END IF;
+END $$;
+
+-- ============================================================================
 -- 1. CREATE TABLES
 -- ============================================================================
 
 -- Main credentials table - encrypted storage only
 CREATE TABLE IF NOT EXISTS credentials (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Ownership. owner_id is the security boundary and is what RLS scopes on.
+  -- It is filled from auth.uid() and can never be set to another user's id.
+  owner_id UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
+  -- Legacy display name. Kept for pre-auth installs and for the UI label only.
+  -- NEVER use this for access control: it is user-supplied and unverified.
   user_id TEXT NOT NULL DEFAULT 'self-hosted-user',
   title TEXT NOT NULL,
   description TEXT,
@@ -41,30 +94,33 @@ CREATE TABLE IF NOT EXISTS credentials (
 -- Vault configuration table for secure key management (simplified bcrypt-only architecture)
 CREATE TABLE IF NOT EXISTS vault_config (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT NOT NULL DEFAULT 'self-hosted-user',
-  wrapped_dek JSONB, -- Legacy field for backwards compatibility
-  raw_dek TEXT, -- Raw DEK (base64) for simplified architecture (nullable for legacy users)
-  bcrypt_hash TEXT, -- Bcrypt hash of master passphrase for secure reset (nullable for legacy users)
+  owner_id UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL DEFAULT 'self-hosted-user', -- display label only, not a security boundary
+  -- The DEK is stored ONLY wrapped: AES-GCM encrypted under a key derived from
+  -- the master passphrase (Argon2id). The passphrase never reaches the server,
+  -- so a full database read yields nothing usable without it.
+  wrapped_dek JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  
-  -- Ensure one config per user
-  UNIQUE(user_id)
+
+  -- One vault per authenticated account
+  UNIQUE(owner_id)
 );
 
 -- Categories table for organization
 CREATE TABLE IF NOT EXISTS categories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT NOT NULL DEFAULT 'self-hosted-user',
+  owner_id UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL DEFAULT 'self-hosted-user', -- display label only, not a security boundary
   name TEXT NOT NULL,
   color TEXT DEFAULT '#6366f1',
   icon TEXT DEFAULT 'folder',
   description TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  
-  -- Ensure unique category names per user
-  UNIQUE(user_id, name)
+
+  -- Ensure unique category names per account
+  UNIQUE(owner_id, name)
 );
 
 -- ============================================================================
@@ -72,6 +128,8 @@ CREATE TABLE IF NOT EXISTS categories (
 -- ============================================================================
 
 -- Credentials table indexes
+-- owner_id is indexed because every RLS policy filters on it.
+CREATE INDEX IF NOT EXISTS idx_credentials_owner_id ON credentials(owner_id);
 CREATE INDEX IF NOT EXISTS idx_credentials_user_id ON credentials(user_id);
 CREATE INDEX IF NOT EXISTS idx_credentials_type ON credentials(credential_type);
 CREATE INDEX IF NOT EXISTS idx_credentials_category ON credentials(category);
@@ -84,10 +142,10 @@ CREATE INDEX IF NOT EXISTS idx_credentials_encrypted ON credentials ((secret_blo
 CREATE INDEX IF NOT EXISTS idx_credentials_encrypted_at ON credentials (encrypted_at) WHERE encrypted_at IS NOT NULL;
 
 -- Vault config indexes
-CREATE INDEX IF NOT EXISTS idx_vault_config_user_id ON vault_config(user_id);
+CREATE INDEX IF NOT EXISTS idx_vault_config_owner_id ON vault_config(owner_id);
 
 -- Categories indexes
-CREATE INDEX IF NOT EXISTS idx_categories_user_id ON categories(user_id);
+CREATE INDEX IF NOT EXISTS idx_categories_owner_id ON categories(owner_id);
 CREATE INDEX IF NOT EXISTS idx_categories_name ON categories(name);
 
 -- ============================================================================
@@ -166,56 +224,87 @@ END $$;
 -- 6. CREATE RLS POLICIES (Self-Hosted Mode)
 -- ============================================================================
 
+-- Every policy below is scoped two ways:
+--   TO authenticated  -> the anon key alone grants nothing. A request with no
+--                        session never matches a policy, so it reads zero rows.
+--   owner_id = auth.uid() -> an authenticated user reaches only their own rows.
+--
+-- auth.uid() is wrapped in a scalar subquery so Postgres evaluates it once per
+-- statement instead of once per row (initplan caching).
+--
+-- The WITH CHECK clauses on INSERT/UPDATE are what stop a user from writing a
+-- row owned by someone else, or re-assigning one of their rows to another user.
+
 -- CREDENTIALS TABLE POLICIES
--- Self-hosted mode: Allow access to data for any user (no authentication required)
--- This enables multi-user support on the same instance
 CREATE POLICY "credentials_select_policy" ON credentials
-  FOR SELECT USING (true);
+  FOR SELECT TO authenticated
+  USING (owner_id = (SELECT auth.uid()));
 
 CREATE POLICY "credentials_insert_policy" ON credentials
-  FOR INSERT WITH CHECK (true);
+  FOR INSERT TO authenticated
+  WITH CHECK (owner_id = (SELECT auth.uid()));
 
 CREATE POLICY "credentials_update_policy" ON credentials
-  FOR UPDATE USING (true) WITH CHECK (true);
+  FOR UPDATE TO authenticated
+  USING (owner_id = (SELECT auth.uid()))
+  WITH CHECK (owner_id = (SELECT auth.uid()));
 
 CREATE POLICY "credentials_delete_policy" ON credentials
-  FOR DELETE USING (true);
+  FOR DELETE TO authenticated
+  USING (owner_id = (SELECT auth.uid()));
 
 -- VAULT_CONFIG TABLE POLICIES
--- Self-hosted mode: Allow access to vault configs for any user
--- This enables multi-user support on the same instance
+-- This table holds the wrapped DEK. Even a successful read is useless without
+-- the master passphrase, but it is still scoped to the owner.
 CREATE POLICY "vault_config_select_policy" ON vault_config
-  FOR SELECT USING (true);
+  FOR SELECT TO authenticated
+  USING (owner_id = (SELECT auth.uid()));
 
 CREATE POLICY "vault_config_insert_policy" ON vault_config
-  FOR INSERT WITH CHECK (true);
+  FOR INSERT TO authenticated
+  WITH CHECK (owner_id = (SELECT auth.uid()));
 
 CREATE POLICY "vault_config_update_policy" ON vault_config
-  FOR UPDATE USING (true) WITH CHECK (true);
+  FOR UPDATE TO authenticated
+  USING (owner_id = (SELECT auth.uid()))
+  WITH CHECK (owner_id = (SELECT auth.uid()));
 
 CREATE POLICY "vault_config_delete_policy" ON vault_config
-  FOR DELETE USING (true);
+  FOR DELETE TO authenticated
+  USING (owner_id = (SELECT auth.uid()));
 
 -- CATEGORIES TABLE POLICIES
--- Self-hosted mode: Allow access to categories for any user
--- This enables multi-user support on the same instance
 CREATE POLICY "categories_select_policy" ON categories
-  FOR SELECT USING (true);
+  FOR SELECT TO authenticated
+  USING (owner_id = (SELECT auth.uid()));
 
 CREATE POLICY "categories_insert_policy" ON categories
-  FOR INSERT WITH CHECK (true);
+  FOR INSERT TO authenticated
+  WITH CHECK (owner_id = (SELECT auth.uid()));
 
 CREATE POLICY "categories_update_policy" ON categories
-  FOR UPDATE USING (true) WITH CHECK (true);
+  FOR UPDATE TO authenticated
+  USING (owner_id = (SELECT auth.uid()))
+  WITH CHECK (owner_id = (SELECT auth.uid()));
 
 CREATE POLICY "categories_delete_policy" ON categories
-  FOR DELETE USING (true);
+  FOR DELETE TO authenticated
+  USING (owner_id = (SELECT auth.uid()));
+
+-- Revoke the blanket grants PostgREST hands out, so anon cannot even attempt a
+-- read. RLS already blocks it; this makes the failure explicit at the grant
+-- layer too, and means a future policy mistake does not silently open the door.
+REVOKE ALL ON credentials, vault_config, categories FROM anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON credentials, vault_config, categories TO authenticated;
 
 -- ============================================================================
 -- 7. CREATE HELPER FUNCTIONS
 -- ============================================================================
 
--- Function to get credential statistics (SECURE)
+-- Function to get credential statistics.
+-- SECURITY INVOKER on purpose: this function reads the credentials table, so it
+-- must run as the caller and inherit their RLS policies. As SECURITY DEFINER it
+-- would bypass RLS and hand any caller another user's statistics.
 CREATE OR REPLACE FUNCTION public.get_credential_stats()
 RETURNS TABLE(
   total_credentials BIGINT,
@@ -224,12 +313,17 @@ RETURNS TABLE(
   recent_count BIGINT
 )
 LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = ''  -- CRITICAL: Set empty search path for security
+SECURITY INVOKER
+SET search_path = ''
 AS $$
 BEGIN
+  -- No session, no stats.
+  IF auth.uid() IS NULL THEN
+    RETURN;
+  END IF;
+
   RETURN QUERY
-  SELECT 
+  SELECT
     COUNT(*) as total_credentials,
     COALESCE(jsonb_object_agg(credential_type, type_count), '{}'::jsonb) as by_type,
     COALESCE(jsonb_object_agg(COALESCE(category, 'Uncategorized'), cat_count), '{}'::jsonb) as by_category,
@@ -242,7 +336,9 @@ BEGIN
       COUNT(*) OVER (PARTITION BY credential_type) as type_count,
       COUNT(*) OVER (PARTITION BY COALESCE(category, 'Uncategorized')) as cat_count
     FROM public.credentials  -- Fully qualified schema reference
-    WHERE user_id = 'self-hosted-user'
+    -- RLS already restricts this to the caller's rows; the predicate is kept as
+    -- defence in depth so the function is still correct if policies change.
+    WHERE owner_id = (SELECT auth.uid())
   ) stats;
 END;
 $$;
@@ -287,19 +383,15 @@ END;
 $$;
 
 -- ============================================================================
--- 8. INSERT DEFAULT CATEGORIES
+-- 8. DEFAULT CATEGORIES
 -- ============================================================================
 
--- Insert default categories for organization
-INSERT INTO categories (user_id, name, color, icon, description) VALUES 
-  ('self-hosted-user', 'Development', '#3b82f6', 'code', 'Development tools and APIs'),
-  ('self-hosted-user', 'Personal', '#10b981', 'user', 'Personal accounts and services'),
-  ('self-hosted-user', 'Work', '#f59e0b', 'briefcase', 'Work-related credentials'),
-  ('self-hosted-user', 'Social Media', '#ec4899', 'users', 'Social media accounts'),
-  ('self-hosted-user', 'Finance', '#06b6d4', 'credit-card', 'Banking and financial services'),
-  ('self-hosted-user', 'Cloud Services', '#8b5cf6', 'cloud', 'Cloud platforms and services'),
-  ('self-hosted-user', 'Security', '#ef4444', 'shield', 'Security tools and certificates')
-ON CONFLICT (user_id, name) DO NOTHING;
+-- Default categories are no longer seeded here.
+--
+-- Every row now needs an owner_id, and there is no authenticated session when
+-- you run this script in the SQL editor, so a seed here would either fail or
+-- create orphaned rows that no one can see. Keyper creates each account's
+-- default categories in the app when the account is first registered.
 
 -- ============================================================================
 -- 9. ADD DOCUMENTATION COMMENTS
@@ -309,11 +401,11 @@ COMMENT ON TABLE credentials IS 'Main credentials table with end-to-end encrypti
 COMMENT ON TABLE vault_config IS 'Vault configuration for secure key management';
 COMMENT ON TABLE categories IS 'Categories for organizing credentials';
 
+COMMENT ON COLUMN credentials.owner_id IS 'Owning auth.users id. This is the RLS security boundary.';
+COMMENT ON COLUMN credentials.user_id IS 'Display label only. Unverified and never used for access control.';
 COMMENT ON COLUMN credentials.secret_blob IS 'Encrypted JSON blob containing all secret data';
 COMMENT ON COLUMN credentials.encrypted_at IS 'Timestamp when the credential was encrypted';
-COMMENT ON COLUMN vault_config.wrapped_dek IS 'Legacy wrapped DEK for backwards compatibility';
-COMMENT ON COLUMN vault_config.raw_dek IS 'Raw data encryption key (base64) for simplified bcrypt-only architecture';
-COMMENT ON COLUMN vault_config.bcrypt_hash IS 'Bcrypt hash of master passphrase for secure reset functionality';
+COMMENT ON COLUMN vault_config.wrapped_dek IS 'DEK encrypted under an Argon2id key derived from the master passphrase. Useless without the passphrase, which never leaves the client.';
 
 COMMENT ON FUNCTION get_credential_stats IS 'Get comprehensive statistics about stored credentials';
 COMMENT ON FUNCTION check_rls_status IS 'Check Row Level Security configuration status';
@@ -337,12 +429,31 @@ ORDER BY table_name;
 -- Verify RLS configuration
 SELECT * FROM check_rls_status();
 
--- Verify default categories
-SELECT name, color, icon FROM categories WHERE user_id = 'self-hosted-user' ORDER BY name;
+-- Verify no policy is left unconditional. Every row returned here is a hole:
+-- a policy that applies to anon, or one whose predicate is literally true.
+SELECT
+  tablename,
+  policyname,
+  roles,
+  CASE
+    WHEN 'anon' = ANY(roles) OR 'public' = ANY(roles) THEN '❌ REACHABLE BY ANON'
+    WHEN COALESCE(qual, 'true') = 'true' AND COALESCE(with_check, 'true') = 'true' THEN '❌ UNCONDITIONAL'
+    ELSE '✅ SCOPED'
+  END AS verdict
+FROM pg_policies
+WHERE schemaname = 'public'
+  AND tablename IN ('credentials', 'vault_config', 'categories')
+ORDER BY tablename, policyname;
 
--- Test basic functionality
-SELECT COUNT(*) as total_credentials FROM credentials WHERE user_id = 'self-hosted-user';
-SELECT COUNT(*) as total_categories FROM categories WHERE user_id = 'self-hosted-user';
+-- Confirm anon holds no table privileges at all.
+SELECT
+  table_name,
+  COALESCE(string_agg(privilege_type, ', '), 'none') AS anon_privileges
+FROM information_schema.role_table_grants
+WHERE grantee = 'anon'
+  AND table_schema = 'public'
+  AND table_name IN ('credentials', 'vault_config', 'categories')
+GROUP BY table_name;
 
 -- =====================================================
 -- 🎉 SETUP COMPLETE!
@@ -350,39 +461,46 @@ SELECT COUNT(*) as total_categories FROM categories WHERE user_id = 'self-hosted
 --
 -- Your Keyper database is now ready with:
 -- 
--- ✅ credentials table (with encryption support)
--- ✅ vault_config table (secure key management)
--- ✅ categories table (for organization)
--- ✅ Performance indexes on all tables
--- ✅ Row Level Security (RLS) enabled
--- ✅ Comprehensive security policies
+-- ✅ credentials, vault_config and categories tables
+-- ✅ owner_id ownership column wired to auth.users
+-- ✅ Performance indexes, including on every RLS predicate column
+-- ✅ Row Level Security enabled AND enforced by owner-scoped policies
+-- ✅ anon stripped of all table privileges
 -- ✅ Automatic timestamp triggers
--- ✅ Helper functions for encryption management
--- ✅ Default categories for organization
--- ✅ Verification queries for troubleshooting
+-- ✅ Verification queries that fail loudly if a policy is left open
 --
 -- NEXT STEPS:
--- 1. Configure your Supabase URL and anon key in Keyper
--- 2. Set up your master passphrase in the app
--- 3. Start creating encrypted credentials!
+-- 1. Turn on Email auth in your Supabase project (Authentication > Providers).
+--    Keyper needs a real session now; the anon key alone will not open a vault.
+-- 2. Configure your Supabase URL and anon/publishable key in Keyper.
+-- 3. Create your account in the app, then set your master passphrase.
 --
 -- SECURITY NOTES:
--- - Use the anon/public key (NOT service role key) in your app
--- - All credentials are isolated to 'self-hosted-user'
--- - All sensitive data is stored encrypted in secret_blob column
--- - Zero-knowledge architecture: your passphrase never leaves your device
--- - RLS policies prevent unauthorized access
+-- - Use the anon/public key (NOT the service role key) in your app.
+-- - The anon key is not a secret and is not a credential. On its own it now
+--   reads nothing: every policy requires an authenticated session.
+-- - Each account reaches only rows where owner_id = auth.uid().
+-- - vault_config stores the DEK wrapped under your master passphrase. The
+--   passphrase never leaves your device and is not recoverable. A full dump of
+--   this database does not decrypt your secrets.
+-- - Note the flip side: only secret_blob is encrypted. Titles, usernames, URLs,
+--   notes and tags are stored in plaintext, so an authenticated attacker on
+--   your own account still learns your credential inventory. Treat account
+--   access as vault access.
 --
 -- SECURITY VERIFICATION:
--- Verify all functions have secure search_path settings:
+-- Verify all functions pin their search_path. Note that SECURITY DEFINER is not
+-- automatically the safe answer: get_credential_stats reads a user table and is
+-- deliberately SECURITY INVOKER so it inherits the caller's RLS. Only
+-- catalog-reading helpers should be DEFINER.
 --
--- SELECT 
+-- SELECT
 --   routine_name as function_name,
---   CASE 
---     WHEN prosecdef THEN '✅ SECURITY DEFINER'
---     ELSE '❌ SECURITY INVOKER'
+--   CASE
+--     WHEN prosecdef THEN 'SECURITY DEFINER (bypasses RLS)'
+--     ELSE 'SECURITY INVOKER (inherits RLS)'
 --   END as security_mode,
---   CASE 
+--   CASE
 --     WHEN proconfig::text LIKE '%search_path%' THEN '✅ SEARCH PATH SECURED'
 --     ELSE '❌ SEARCH PATH NOT SET'
 --   END as search_path_status

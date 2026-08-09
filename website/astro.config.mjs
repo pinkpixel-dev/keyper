@@ -27,9 +27,14 @@ export default defineConfig({
 					label: 'Getting Started',
 					items: [
 						{ label: 'Overview', slug: 'getting-started/overview' },
+						{ label: 'Install and Run', slug: 'getting-started/install-and-run' },
+						{
+							label: 'Upgrading to 1.3.0',
+							slug: 'getting-started/upgrading-to-1-3',
+							badge: { text: 'Start here', variant: 'tip' },
+						},
 						{ label: 'Screenshots', slug: 'getting-started/screenshots' },
 						{ label: 'Appearance Settings', slug: 'getting-started/appearance-settings' },
-						{ label: 'Install and Run', slug: 'getting-started/install-and-run' },
 					],
 				},
 				{
@@ -70,6 +75,7 @@ export default defineConfig({
 						{ label: 'Source Map', slug: 'reference/source-map' },
 					],
 				},
+				{ label: 'Support', slug: 'support' },
 			],
 		}),
 	],

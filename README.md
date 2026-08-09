@@ -17,7 +17,7 @@
 [![Electron](https://img.shields.io/badge/Electron-v33-47848F?style=for-the-badge&logo=electron)](https://www.electronjs.org/)
 [![PWA](https://img.shields.io/badge/PWA-Enabled-5A0FC8?style=for-the-badge)](https://web.dev/progressive-web-apps/)
 
-_A modern, secure, self-hosted credential management application for storing and organizing your digital credentials with complete privacy and control._
+_A secure, self-hosted credential management application for storing and organizing your digital credentials with complete privacy and control._
 
 ![Keyper Screenshot](./screenshots/screenshot-dashboard.png)
 ![Keyper Screenshot Light Mode](./screenshots/screenshot-dashboard-light.png)
@@ -25,6 +25,16 @@ _A modern, secure, self-hosted credential management application for storing and
 [🚀 Quick Start](#-quick-start) • [🖼️ Screenshots](#️-screenshots) • [📦 Installation](#-installation) • [🗄️ Setup](#️-database-setup) • [📱 PWA](#-progressive-web-app) • [🔧 Troubleshooting](#-troubleshooting)
 
 </div>
+
+---
+
+> ## ⚠️ Upgrading from an earlier version?
+>
+> **1.3.0 needs a one-time database update if you use Supabase.**
+> Please read **[MIGRATION.md](MIGRATION.md)** before you update. It takes five
+> minutes and covers every step with expected output and troubleshooting.
+>
+> SQLite and Neon users, and anyone installing fresh, can skip it.
 
 ---
 
@@ -84,23 +94,26 @@ Scroll down to see other installation options.
 
 ### 🛡️ **Enterprise-Grade Security**
 
-- 🔒 **Row Level Security (RLS)** - Database-level isolation
-- 🔐 **End-to-End Encryption** - Client-side encryption, zero-knowledge architecture
-- 👤 **Multi-User Support** - Self-service registration, account switching, and per-user vault isolation
+- 🔒 **Row Level Security (RLS)** - Every policy is scoped to `TO authenticated` and `owner_id = auth.uid()`, so the anon key on its own reads nothing
+- 🔐 **End-to-End Encryption** - AES-256-GCM under a key that only your master passphrase can unwrap
+- 👤 **Multi-User Support** - Real accounts via Supabase Auth, with per-account vault isolation enforced by the database
 - 🌐 **Secure Connections** - HTTPS/TLS encryption
 - 🏠 **Self-Hosted** - Complete control over your data
 
+> **Good to know:** encryption covers the secret values themselves. Titles,
+> usernames, URLs, notes, tags and categories are stored as regular text so
+> Keyper can search and sort them. See [Security model](#security-model) for what
+> each layer covers.
+
 ### 🔐 **Advanced Encryption Features**
 
-- **Zero-Knowledge Architecture** - All encryption happens client-side
+- **Passphrase-Wrapped Vault Key** - The key that decrypts your secrets is stored only encrypted under your master passphrase, so a full database dump does not decrypt anything
 - **AES-256-GCM Encryption** - Industry-standard authenticated encryption
 - **Argon2id Key Derivation** - Memory-hard, ASIC-resistant (with PBKDF2 fallback)
 - **Auto-Lock Protection** - 15-minute inactivity timeout with activity detection
-- **Simplified Bcrypt Master Passphrase** - Secure bcrypt-only authentication for new users
-- **Backwards Compatibility** - Legacy wrapped DEK system maintained for existing users
-- **User-Controlled Reset** - Secure emergency passphrase reset without admin backdoors
-- **Database-Only Storage** - No localStorage usage except for database config
-- **Professional Security Audit** - EXCELLENT security rating
+- **Authenticated Row Access** - Supabase Auth session required before the database returns any row
+- **Legacy Vault Migration** - Vaults created before v1.3.0 are re-wrapped automatically on first unlock
+- **No Passphrase Recovery** - There is no stored value that can reset your passphrase, by design
 
 ---
 
@@ -145,7 +158,7 @@ Just enter your own Supabase credentials and start managing your encrypted crede
 
 **Demo Usage:**
 
-- ✅ **Completely Secure** - Zero-knowledge architecture means your data never leaves your browser
+- ✅ **Your Keys Stay Yours** - Your master passphrase never leaves your browser, and the vault key is stored only in wrapped form
 - ✅ **Real Functionality** - Full Keyper experience with your own Supabase instance
 - ✅ **No External Signup Required** - Just bring your Supabase URL and anon/publishable key
 - ✅ **In-App User Registration Available** - Create multiple isolated user vaults directly inside Keyper
@@ -253,6 +266,73 @@ npm run electron:build:win     # NSIS installer
 ```
 
 Installers are output to `dist-electron/`.
+
+---
+
+## 🔄 Upgrading to 1.3.0
+
+> ### 📖 **[→ Read the full Migration Guide](MIGRATION.md)**
+>
+> **If you already use Keyper with Supabase, please read
+> [MIGRATION.md](MIGRATION.md) in full before you start.** It is a five-minute
+> read and it walks through every step with expected output and troubleshooting.
+> Keyper also guides you through the same steps in the app.
+
+1.3.0 needs a one-time database update before it will open an existing vault.
+
+### The three rules
+
+1. **Run the five scripts one at a time, in order.** Do not paste them all in together.
+2. **Back up first.** Supabase → Database → Backups.
+3. **Do not run `supabase-setup.sql`.** That is for new installs only.
+
+Every script checks itself before changing anything, so running one out of order
+stops safely and tells you where to go back to. Nothing half-applies.
+
+### What changed
+
+Keyper now signs you in to an account before opening your vault, and stores your
+vault key in a stronger form.
+
+- **You sign in with an email and password.** Previously Keyper identified you by
+  a username you typed. Now it uses a real account, and the database checks it.
+- **Each account only sees its own data,** enforced by the database rather than
+  by the app filtering results.
+- **Your vault key is now stored encrypted under your master passphrase.** It used
+  to be stored in a form the server could read directly. This means a copy of the
+  database is no longer enough to decrypt anything.
+
+Your credentials are not changed and not re-encrypted.
+
+### The short version
+
+| # | Where | What |
+|---|---|---|
+| 1 | Supabase | Back up your database |
+| 2 | Supabase | Authentication → Providers → enable Email |
+| 3 | Supabase | Authentication → Users → Add user |
+| 4 | SQL Editor | Run [`migration/01-check.sql`](migration/01-check.sql), copy your account UUID |
+| 5 | SQL Editor | Run [`migration/02-claim-your-data.sql`](migration/02-claim-your-data.sql) — **paste your UUID into the one marked line** |
+| 6 | SQL Editor | Run [`migration/03-apply-security.sql`](migration/03-apply-security.sql) |
+| 7 | Keyper | Sign in, then unlock with your **existing** master passphrase |
+| 8 | SQL Editor | Run [`migration/04-check-key.sql`](migration/04-check-key.sql) to confirm |
+| 9 | SQL Editor | Run [`migration/05-remove-old-key.sql`](migration/05-remove-old-key.sql) |
+
+Only step 5 needs an edit. Everything else is paste-and-run.
+
+### Two things to know before you start
+
+**You will have two secrets, not one.** The account password you create in step 3
+gets you your rows. Your existing master passphrase decrypts them. They are
+different, and you need both.
+
+**Your master passphrase can no longer be reset.** You can change it whenever you
+know the current one, but nothing stored can recover it. Older versions allowed a
+reset only because the vault key sat separately in usable form, which is the
+thing being fixed. **Write your passphrase down somewhere safe before you start.**
+
+Full detail, expected output at each step, and troubleshooting:
+**[MIGRATION.md](MIGRATION.md)**
 
 ---
 
@@ -434,45 +514,52 @@ Keyper works as a Progressive Web App for a native app experience!
 - Refresh after user-switch actions if prompted for the cleanest vault context handoff
 - Each user's data is completely separate and encrypted individually
 
-### 🔑 Master Passphrase Reset
+### 🔑 Master Passphrase: change it, you cannot reset it
 
-**Forgot your master passphrase?** No problem! Your encrypted data is completely safe and you can securely reset your passphrase:
+You can **change** your master passphrase from Settings if you know the current
+one. You cannot **reset** it if you have forgotten it. Nobody can, including us,
+and that is the point.
 
-**Important**: It's not possible to _view_ your current master passphrase, but you can _update/change_ it using our secure bcrypt-based reset system.
+**Changing it** re-wraps the same vault key under a key derived from your new
+passphrase. Nothing gets re-encrypted, so it is quick and every existing
+credential keeps working.
 
-📖 **Complete Reset Guide**: For detailed step-by-step instructions, see our comprehensive [Emergency Passphrase Reset Guide](./docs/EMERGENCY_PASSPHRASE_RESET.md)
+**If you forget it**, the vault is gone. There is no recovery path and no
+support request that helps. Your only option is to delete the vault and start
+over. Write your passphrase down and put it somewhere safe.
 
-**Quick Overview:**
+> **This changed in v1.3.0, and the change was deliberate.** Older versions let
+> you regain access by overwriting the `bcrypt_hash` column in the database.
+> That worked because the vault key was stored separately, in usable form, in
+> `raw_dek`. Which also meant anyone who could write to your database could
+> reset the hash, read the key and decrypt everything. The reset was not a
+> feature sitting next to the encryption; it was a hole straight through it.
+>
+> The vault key is now stored only wrapped under your passphrase, so there is
+> no value in the database that a reset could unlock. Losing the passphrase
+> genuinely loses the data. That is the trade, and it is the right one for a
+> credential manager.
 
-**For Supabase users:**
+**Account password vs master passphrase** — two different secrets:
 
-1. Access your Supabase dashboard and navigate to the `vault_config` table
-2. Generate a new bcrypt hash using your desired new passphrase
-3. Replace the `bcrypt_hash` value in your database
-4. Login with your new passphrase
-
-**For SQLite (local) users:**
-
-1. Open your browser's DevTools → Application → IndexedDB → find the Keyper database
-2. Alternatively, use the in-app **Settings → Reset** tab for guided instructions
-3. Generate a new bcrypt hash using your desired new passphrase
-4. Replace the `bcrypt_hash` value in the `vault_config` table and reload
-
-**Security Benefits:**
-
-- ✅ **No Backdoors**: Complete elimination of admin override capabilities
-- ✅ **User Control**: Only you can reset your own passphrase
-- ✅ **Data Safety**: Your encrypted credentials remain completely safe
-- ✅ **Industry Standard**: Uses proven bcrypt hashing technology
-- ✅ **Zero Knowledge**: Hash-only storage ensures maximum security
+| | Account password | Master passphrase |
+|---|---|---|
+| What it does | Proves who you are so the database returns your rows | Decrypts those rows |
+| Where it lives | Supabase Auth | Only in your head |
+| Can it be reset? | Yes, by email | No, never |
+| If leaked | Attacker gets ciphertext and metadata | Attacker needs your rows too |
 
 ### Getting Help
 
-1. Check the [Self-Hosting Guide](SELF-HOSTING.md)
-2. Review browser console for errors (F12 → Console)
-3. Verify your database provider logs (Supabase dashboard → Logs, or browser DevTools → Console for SQLite errors)
-4. Use the master passphrase reset process above for password issues
-5. Report issues on [GitHub](https://github.com/pinkpixel-dev/keyper/issues)
+1. **Upgrading to 1.3.0?** Start with [MIGRATION.md](MIGRATION.md)
+2. Check the [documentation](https://keyper.icu) or the [Self-Hosting Guide](SELF-HOSTING.md)
+3. Review the browser console for errors (F12 → Console)
+4. Check your database provider logs (Supabase dashboard → Logs, or DevTools → Console for SQLite)
+5. Report bugs and request features on [GitHub](https://github.com/pinkpixel-dev/keyper/issues)
+6. For anything else, email **[support@keyper.icu](mailto:support@keyper.icu)**
+
+> When asking for help, never include your master passphrase, your database
+> connection string, or the contents of your `vault_config` table.
 
 ---
 
@@ -489,18 +576,36 @@ Keyper works as a Progressive Web App for a native app experience!
 
 ### Security Features
 
-- 🔒 **Row Level Security** - Database-level access control
-- 🔐 **Encryption** - Data encrypted at rest and in transit
-- 👤 **User Isolation** - Each user sees only their data
+- 🔒 **Row Level Security** - Owner-scoped policies that require an authenticated session
+- 🔐 **Encryption** - Secret values encrypted client-side; metadata stored in plaintext
+- 👤 **User Isolation** - Enforced by the database, not by client-side filtering
 - 🛡️ **Offline-First Option** - SQLite mode requires no internet and stores data entirely on-device
 
 ### Multi-User Notes
 
-- **Registration**: Users can self-register from the lock screen via **Create New User**; no admin account is required.
-- **User Management**: Dashboard includes a **User Management** area that lists registered users and supports secure switching.
-- **Isolation**: Every username has its own `vault_config`, passphrase verifier, encryption key material, credentials, and categories.
-- **No Backdoors**: Switching users never bypasses passphrase verification, and there is no admin recovery path.
-- **Reset Model**: Emergency passphrase reset remains self-service per user via that user’s `bcrypt_hash` record.
+- **Registration**: Users self-register with an email and password through Supabase Auth. No admin account is required. Enable the Email provider in your Supabase project first.
+- **Isolation**: Every account has its own `vault_config`, wrapped vault key, credentials and categories, and the database enforces the separation through owner-scoped RLS policies. It is not client-side filtering that you could bypass by editing a query.
+- **Switching accounts**: Sign out and sign in as the other account. There is no in-app account switcher any more, because listing other users required a database read that is now correctly refused.
+- **No Backdoors**: There is no admin override and no recovery path. Signing in gets you your own encrypted rows; the master passphrase is still required to read them.
+
+### Security model
+
+Keyper protects your data in layers. They are easy to mix up, so here is what
+each one actually does:
+
+| Layer | What it covers |
+|---|---|
+| Supabase Auth session | Decides whether the database returns your rows at all |
+| Owner-scoped RLS policies | Keeps each account to its own rows, checked by the database |
+| Passphrase-wrapped vault key | Means a copy of the database cannot decrypt anything on its own |
+| AES-256-GCM on `secret_blob` | Encrypts the secret values themselves |
+
+**Scope, so you know what you are working with:**
+
+- Encryption covers the secret values. `title`, `username`, `url`, `notes`, `tags`, `category` and `priority` are stored as regular text, which is what makes search and sorting work. Encrypting them is on the roadmap.
+- Your master passphrase is the only thing that unlocks the vault key, and it is never sent anywhere. That also means nobody can recover it for you, so keep a copy somewhere safe.
+- The anon/publishable key is designed to be public and is safe to expose. On its own it does not open anything.
+- **Neon mode works differently.** It connects to Postgres directly from the browser using a connection string, which carries full database access, so database-side rules cannot narrow it down. It suits a single operator who keeps that string private. For separate accounts use Supabase; for a private local vault use SQLite.
 
 ---
 

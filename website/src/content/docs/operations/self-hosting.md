@@ -8,9 +8,15 @@ This page covers the different ways to self-host Keyper and the runtime model th
 ## Runtime assumptions in app code
 
 - Supabase URL/key or Neon connection strings are supplied by the user at runtime and stored in local storage.
-- Username context is also local-storage driven (`keyper-username`).
-- Registration handoff uses local state (`keyper-show-registration`) to route from lock screen into new-user creation.
-- Credential and category table access is filtered by `user_id` in client queries.
+- On Supabase, identity comes from the signed-in Supabase Auth session, and row access is scoped by the database to `owner_id = auth.uid()`. Client queries filter on the same column, but the database is what enforces it.
+- On SQLite and Neon, the vault is selected by a local username (`keyper-username`) typed on the unlock screen, since those modes have no server-side account.
+- Enable the Email provider in your Supabase project before first use, or nobody will be able to sign in.
+
+:::note
+Upgrading an existing Supabase install from before 1.3.0? See
+[Upgrading to 1.3.0](/getting-started/upgrading-to-1-3/) for the one-time
+database update.
+:::
 
 ## Deployment options
 
@@ -56,7 +62,7 @@ docker run -d -p 8080:80 --name keyper --restart unless-stopped keyper
 
 No environment variables or volumes are required. Configuration (Supabase credentials, Neon connection strings, provider selection, username context, optional SQLite path/name) is entered in-app. In browser-hosted usage, config is stored in browser `localStorage` and SQLite data persists in browser storage. In Electron, SQLite can also use a file on disk.
 
-Multi-user onboarding is self-service in the app itself (lock screen **Create New User** or **Dashboard Settings → User Management → Add New User**). No admin account is required or available.
+Multi-user onboarding is self-service. On Supabase each person signs up with their own email, and the database keeps accounts to their own rows. On SQLite and Neon, each username on the unlock screen gets its own vault and passphrase. No admin account is required or available in either case.
 
 ### HTTPS in production
 

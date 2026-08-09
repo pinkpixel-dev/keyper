@@ -1,0 +1,355 @@
+---
+title: Upgrading to 1.3.0
+description: One-time database update for existing Keyper installs on Supabase, step by step.
+---
+
+import SqlStep from '../../../components/SqlStep.astro';
+
+Keyper 1.3.0 changes how you sign in and how your vault key is stored. If you
+already use Keyper with Supabase, there is a one-time database update to run
+before the new version will open your vault.
+
+About five minutes to read, about five minutes to do. Reading first is what makes
+the difference.
+
+:::danger[Please read this page in full before you start]
+1. **Run the five scripts one at a time, in order.** Do not paste them all in
+   together. Do not skip ahead.
+2. **Back up your database first.** Supabase → Database → Backups.
+3. **Do not run `supabase-setup.sql`.** That one is for brand new installs.
+
+Every script checks its own preconditions before it changes anything. Run one out
+of order and it stops, tells you which step to go back to, and leaves your
+database exactly as it was. **Nothing half-applies**, so a mistake here is not a
+disaster.
+:::
+
+## Do I need this?
+
+| You use | Need this guide? |
+|---|---|
+| **Supabase**, vault created before 1.3.0 | **Yes** |
+| **SQLite** (local) | No |
+| **Neon** | No |
+| Brand new install | No — run `supabase-setup.sql` instead |
+
+Keyper detects this for you too. If you open 1.3.0 and see "Your database needs a
+one-time update", you are in the right place.
+
+## What is changing
+
+**Before:** you typed a username on the unlock screen and Keyper trusted it. The
+database handed over rows to anyone who asked.
+
+**After:** you sign in with an email and password, and the database checks who you
+are on every request.
+
+**Also:** your vault key used to be stored in a form the server could read
+directly. Now it is encrypted under your master passphrase, so a copy of the
+database cannot decrypt anything on its own.
+
+### What this does not do
+
+- Does **not** delete any credentials
+- Does **not** re-encrypt anything, so it is fast even with a large vault
+- Does **not** change your master passphrase
+- Does **not** touch your categories or tags
+
+## Two things to know first
+
+### You will have two secrets, not one
+
+This is the part that trips people up.
+
+| | Account password | Master passphrase |
+|---|---|---|
+| **Created** | During this migration | You already have it |
+| **What it does** | Gets you your rows | Decrypts them |
+| **Can be reset?** | Yes, by email | **No, never** |
+
+You create a **new account password** during this migration. Your **existing
+master passphrase does not change**, and you will still need it.
+
+### Your master passphrase becomes unrecoverable
+
+Older Keyper let you reset a forgotten passphrase by editing the database. That
+only worked because the vault key sat separately in usable form, which is exactly
+what is being fixed.
+
+:::danger[Write your master passphrase down before you start]
+After this migration, your passphrase is the only way into your vault. If you
+lose it, the vault cannot be recovered by anyone, including us.
+:::
+
+## Overview
+
+```
+1. Back up                      Supabase dashboard
+2. Turn on email sign-in        Supabase dashboard
+3. Create your account          Supabase dashboard
+4. Run 01-check.sql             SQL Editor      (reads only)
+5. Run 02-claim-your-data.sql   SQL Editor      ← the only edit
+6. Run 03-apply-security.sql    SQL Editor
+7. Sign in and unlock           Keyper
+8. Run 04-check-key.sql         SQL Editor      (reads only)
+9. Run 05-remove-old-key.sql    SQL Editor
+```
+
+---
+
+## Step 1 — Back up your database
+
+**Supabase dashboard → Database → Backups.**
+
+Do this even though the migration is careful. It costs nothing and means a
+mistake is never permanent.
+
+## Step 2 — Turn on email sign-in
+
+**Authentication → Providers → Email → enable.**
+
+Keyper signs you in to a real account now. Without this, nobody can create one.
+
+:::note
+Skip this and later steps fail with *"Sign-ups are disabled on this Supabase
+project."* That is what that message means.
+:::
+
+## Step 3 — Create your account
+
+**Authentication → Users → Add user.** Real email address, strong password.
+
+:::danger[This password is not your master passphrase]
+Do not reuse your master passphrase here. They do different jobs and you will
+need both.
+:::
+
+## Step 4 — Find your account ID
+
+Paste this into **SQL Editor → New query** and run it. It only reads, so it is
+safe to run as often as you like.
+
+<SqlStep file="01-check.sql" label="Reads only. Tells you the account UUID you need next, and whether any of the migration has already been applied." />
+
+You will get something like:
+
+```
+Accounts you can migrate to | you@example.com  ->  a1b2c3d4-e5f6-7890-abcd-ef1234567890
+Migration started?          | NO — nothing applied yet, start at step 2
+Your data                   | credentials=25  vault_config=1  categories=8
+Usernames in use            | sizzlebop
+Vault key state             | original format — step 4 not done yet
+Access rules                | original rules still active (12 policies)
+```
+
+**Copy the UUID after your email address.**
+
+:::danger[Not the id column in your tables]
+The UUID you want is the one printed next to your email. It is **not** the `id`
+column in `credentials` or `vault_config` — those are row IDs, one per row, and
+there are lots of them.
+:::
+
+If "Accounts you can migrate to" says **NONE**, go back to steps 2 and 3.
+
+Make a note of the "Your data" numbers. You will check them in the next step.
+
+## Step 5 — Claim your data
+
+:::caution[This is the only script that needs an edit]
+Find this line in the file and replace the zeros with your UUID from step 4,
+keeping the quotes:
+
+```sql
+target_owner  UUID := '00000000-0000-0000-0000-000000000000';
+```
+
+becomes
+
+```sql
+target_owner  UUID := 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+```
+
+Change nothing else. Leave `only_username` as `NULL` unless several people share
+this database.
+:::
+
+<SqlStep file="02-claim-your-data.sql" needsEdit label="Adds an ownership column and marks your existing rows as yours. Does not change credential data." />
+
+**Expected output:**
+
+```
+NOTICE:  Assigned to you@example.com:
+  25 credential(s)
+  1 vault config(s)
+  8 category/ies
+```
+
+:::danger[Check these numbers]
+They should match the "Your data" line from step 4. If credentials says **0**,
+stop and see [Troubleshooting](#troubleshooting) before continuing.
+:::
+
+The query at the bottom should return **no rows**. If it lists anything, run the
+script again with `only_username` as `NULL`.
+
+## Step 6 — Apply the new access rules
+
+No edits. Paste and run.
+
+<SqlStep file="03-apply-security.sql" label="Swaps over the database access rules so each account reaches only its own rows. Stops safely if step 5 did not finish." />
+
+**Expected output:**
+
+```
+NOTICE:  Done. Access rules replaced on all three tables.
+```
+
+Then a table where **every row says `SCOPED`**, and a final query returning **no
+rows**.
+
+:::note
+If it says *"STOPPED: N row(s) do not have an owner yet"*, step 5 did not finish.
+Go back and run it again with `only_username` as `NULL`. Nothing has been
+changed, and your vault keeps working in the meantime.
+:::
+
+## Step 7 — Sign in and unlock
+
+Open Keyper. If you are on the upgrade screen, press **Re-check database**.
+
+1. **Sign in** with the account from step 3
+2. **Unlock** with your **existing master passphrase**, not the account password
+
+Your credentials should all be there. Keyper moves your vault key to the new
+format the moment you unlock. Nothing is re-encrypted, so it is instant.
+
+:::danger[If Keyper offers to create a new vault, stop]
+Do not create one. It means step 5 did not claim your `vault_config` row. See
+[Troubleshooting](#troubleshooting).
+:::
+
+## Step 8 — Confirm the key moved
+
+<SqlStep file="04-check-key.sql" label="Reads only. Confirms your vault key moved to the new format." />
+
+**Expected output:**
+
+```
+vault      | status
+sizzlebop  | DONE — ready for step 5
+```
+
+:::danger[Do not continue until every row says DONE]
+If it says **NOT YET**, go back to step 7 and unlock in the app first.
+:::
+
+## Step 9 — Remove the old key copy
+
+The last one. No edits.
+
+<SqlStep file="05-remove-old-key.sql" label="Removes the old copy of your vault key. Checks first and refuses if any vault has not moved across, so it cannot run too early." />
+
+**Expected output:**
+
+```
+NOTICE:  Done. Old key columns removed.
+         Your migration is complete.
+```
+
+**You are finished.** 🎉
+
+---
+
+## Troubleshooting
+
+Every one of these is recoverable. None of them lose data.
+
+#### "The account UUID has not been filled in yet"
+You ran `02-claim-your-data.sql` without doing the edit. Go back to step 5.
+
+#### "No account exists with id ..."
+The UUID is wrong, or no account exists yet. Re-run `01-check.sql` and copy the
+UUID exactly. If it lists no accounts, do steps 2 and 3.
+
+#### "this database has not had step 2 applied yet"
+You ran `03-apply-security.sql` before `02-claim-your-data.sql`. Run them in
+order. Nothing was changed.
+
+#### "STOPPED: N row(s) do not have an owner yet"
+`02-claim-your-data.sql` did not match all your rows, usually because
+`only_username` was set. Run it again with `only_username` as `NULL`.
+
+#### Step 5 says "0 credential(s)"
+Either the rows were already claimed by an earlier run, or `only_username` does
+not match your actual username. Run `01-check.sql` and look at "Usernames in
+use".
+
+#### Keyper offers to create a new vault instead of asking for my passphrase
+Your `vault_config` row was not claimed. **Do not create a new vault.** Run
+`01-check.sql`: if "Your data" shows `vault_config=1` but Keyper cannot see it,
+run `02-claim-your-data.sql` again with `only_username` as `NULL`.
+
+#### "This database holds N separate vaults"
+You have more than one legacy username, each with its own vault and its own
+encryption key. They cannot merge into one account, because their credentials are
+encrypted with different keys. See [Sharing a database](#sharing-a-database-with-other-people).
+
+#### Keyper still shows the upgrade screen
+Steps 5 and 6 both need to have run. Run `01-check.sql`: "Migration started?"
+should say YES and "Access rules" should say the new rules are active.
+
+#### I ran `supabase-setup.sql` by mistake
+It stops by itself when it finds existing data, so almost certainly nothing
+happened. Run `01-check.sql` to confirm, then carry on from step 4.
+
+#### I have lost my master passphrase
+There is no recovery path, and that was true before this migration too. The vault
+key is only stored encrypted under that passphrase. If it is genuinely gone, the
+vault has to be recreated.
+
+## Sharing a database with other people
+
+If several people use the same Supabase project, each has their own username and
+their own vault.
+
+1. Create **one Supabase account per person** (step 3, repeated)
+2. Run `02-claim-your-data.sql` **once per person**, setting both:
+   ```sql
+   target_owner  UUID := 'their-account-uuid';
+   only_username TEXT := 'their-username';
+   ```
+3. Only once **every** username has an owner, run `03-apply-security.sql`
+4. Each person signs in and unlocks with **their own** master passphrase
+
+`03-apply-security.sql` refuses to run while anyone is unclaimed, so you cannot
+accidentally lock someone out.
+
+## After you finish
+
+**Signing in comes first, then your passphrase.** Two steps, two secrets.
+
+**Switching accounts means signing out and back in.** The old in-app user list
+worked by reading everyone's rows, which the new rules correctly prevent.
+
+**Your master passphrase cannot be reset.** You can change it from Settings any
+time you know the current one. Keep a copy somewhere safe.
+
+**If you ran Keyper on a publicly reachable URL:** the previous database rules
+allowed access to vault rows using the public anon key. Now that you have
+migrated, it is worth refreshing any credentials you stored during that period.
+If you only ever ran Keyper on localhost, there is nothing extra to do.
+
+## Still stuck?
+
+Open an issue at
+[github.com/pinkpixel-dev/keyper/issues](https://github.com/pinkpixel-dev/keyper/issues)
+with the output of `01-check.sql`. That one query says exactly where you are.
+
+Do not paste your `wrapped_dek`, `raw_dek` or `bcrypt_hash` values into an issue.
+`01-check.sql` deliberately does not print them.
+
+## Credits
+
+Reported privately by [Cenk Kurtoglu](https://github.com/cekuu35), who reviewed
+the setup SQL Keyper ships and got in touch rather than opening a public issue.

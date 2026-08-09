@@ -1,392 +1,207 @@
 /**
- * UserRegistration - Self-service user registration component
- * 
- * Allows new users to create their own accounts without admin intervention.
- * Maintains zero-knowledge architecture with complete vault isolation.
- * 
+ * UserRegistration - create a Keyper account
+ *
+ * This used to register a username with no authentication behind it, which is
+ * why one user could reach another user's rows. Registration now creates a real
+ * account; the master passphrase is set separately, after first sign-in, so the
+ * two secrets never get entered on the same screen and confused for each other.
+ *
  * Made with ❤️ by Pink Pixel ✨
  */
 
-import React, { useState, useEffect} from 'react';
-import { Button} from '@/components/ui/button';
-import { Input} from '@/components/ui/input';
-import { Label} from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
-import { Alert, AlertDescription} from '@/components/ui/alert';
-import { Progress} from '@/components/ui/progress';
-import { Badge} from '@/components/ui/badge';
-import {
- UserPlus,
- Eye,
- EyeOff,
- AlertTriangle,
- CheckCircle,
- Info,
- ArrowLeft,
- Shield
-} from 'lucide-react';
-import { analyzePassphrase, getStrengthColor} from '@/security/PassphraseValidator';
-import type { PassphraseAnalysis} from '@/security/PassphraseValidator';
-import { supabase} from '@/integrations/supabase/client';
+import React, { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { signUp } from '@/integrations/supabase/auth';
+import { AlertTriangle, Eye, EyeOff, Info, Loader2, UserPlus } from 'lucide-react';
 
 interface UserRegistrationProps {
- onSuccess: (username: string, passphrase: string) => void;
- onCancel: () => void;
+  /**
+   * Called when an account was created but cannot be used yet because the
+   * project requires email confirmation. The success path needs no callback:
+   * AuthGate is subscribed to auth state and picks up the new session itself.
+   */
+  onNeedsConfirmation?: (email: string) => void;
+  onSwitchToSignIn: () => void;
 }
 
-export default function UserRegistration({ onSuccess, onCancel}: UserRegistrationProps) {
- const [username, setUsername] = useState('');
- const [passphrase, setPassphrase] = useState('');
- const [confirmPassphrase, setConfirmPassphrase] = useState('');
- const [showPassphrase, setShowPassphrase] = useState(false);
- const [showConfirmPassphrase, setShowConfirmPassphrase] = useState(false);
- const [isRegistering, setIsRegistering] = useState(false);
- const [error, setError] = useState<string | null>(null);
- const [usernameError, setUsernameError] = useState<string | null>(null);
- const [passphraseAnalysis, setPassphraseAnalysis] = useState<PassphraseAnalysis | null>(null);
- const [isCheckingUsername, setIsCheckingUsername] = useState(false);
+const MIN_PASSWORD_LENGTH = 8;
 
- // Validate username format
- const validateUsername = (value: string): string | null => {
- if (!value) return 'Username is required';
- if (value.length < 3) return 'Username must be at least 3 characters';
- if (value.length > 50) return 'Username must be less than 50 characters';
- if (!/^[a-zA-Z0-9_-]+$/.test(value)) {
- return 'Username can only contain letters, numbers, hyphens, and underscores';
-}
- return null;
-};
+export default function UserRegistration({
+  onNeedsConfirmation,
+  onSwitchToSignIn,
+}: UserRegistrationProps) {
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
- // Check if username already exists
- const checkUsernameExists = async (username: string): Promise<boolean> => {
- try {
- const { data, error} = await supabase
- .from('vault_config')
- .select('user_id')
- .eq('user_id', username)
- .limit(1);
+  const validate = (): string | null => {
+    if (!email.trim()) return 'Enter an email address.';
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      return `Account password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
+    }
+    if (password !== confirmPassword) return 'Passwords do not match.';
+    return null;
+  };
 
- if (error) {
- throw error;
-}
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
 
- return Array.isArray(data) && data.length > 0;
-} catch (error) {
- console.error('Error checking username:', error);
- throw error;
-}
-};
+    const validationError = validate();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
 
- // Debounced username validation
- useEffect(() => {
- const formatError = validateUsername(username);
- if (formatError) {
- setUsernameError(formatError);
- return;
-}
+    setBusy(true);
+    setError(null);
 
- if (!username) {
- setUsernameError(null);
- return;
-}
+    try {
+      const result = await signUp(email, password, displayName);
 
- const timer = setTimeout(async () => {
- try {
- setIsCheckingUsername(true);
- const exists = await checkUsernameExists(username);
- 
- if (exists) {
- setUsernameError('Username already exists. Please choose a different username.');
-} else {
- setUsernameError(null);
-}
-} catch {
- setUsernameError('Unable to verify username right now. Please try again.');
-} finally {
- setIsCheckingUsername(false);
-}
-}, 500);
+      if (result.needsEmailConfirmation) {
+        onNeedsConfirmation?.(email.trim());
+      }
+    } catch (signUpError) {
+      setError(signUpError instanceof Error ? signUpError.message : 'Registration failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
- return () => clearTimeout(timer);
-}, [username]);
+  return (
+    <Card className="w-full max-w-md">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <UserPlus className="h-5 w-5 text-primary" aria-hidden="true" />
+          Create your account
+        </CardTitle>
+        <CardDescription>
+          One account, one vault. You will set your master passphrase right after
+          this.
+        </CardDescription>
+      </CardHeader>
 
- // Update passphrase analysis
- useEffect(() => {
- if (passphrase) {
- const analysis = analyzePassphrase(passphrase);
- setPassphraseAnalysis(analysis);
-} else {
- setPassphraseAnalysis(null);
-}
-}, [passphrase]);
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          {error && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
- const handleSubmit = async (e: React.FormEvent) => {
- e.preventDefault();
- setError(null);
+          <div className="space-y-2">
+            <Label htmlFor="signup-name">Display name (optional)</Label>
+            <Input
+              id="signup-name"
+              type="text"
+              autoComplete="nickname"
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              placeholder="What should we call you?"
+              disabled={busy}
+            />
+          </div>
 
- // Validate username
- const usernameValidation = validateUsername(username);
- if (usernameValidation) {
- setError(usernameValidation);
- return;
-}
+          <div className="space-y-2">
+            <Label htmlFor="signup-email">Email</Label>
+            <Input
+              id="signup-email"
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
+              disabled={busy}
+              required
+            />
+          </div>
 
- // Check username exists
- try {
- const exists = await checkUsernameExists(username);
- if (exists) {
- setError('Username already exists. Please choose a different username.');
- return;
-}
-} catch {
- setError('Unable to verify username availability right now. Please try again.');
- return;
-}
+          <div className="space-y-2">
+            <Label htmlFor="signup-password">Account password</Label>
+            <div className="relative">
+              <Input
+                id="signup-password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+                disabled={busy}
+                className="pr-10"
+                required
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowPassword((visible) => !visible)}
+                className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
 
- // Validate passphrase
- if (!passphrase || passphrase.length < 8) {
- setError('Passphrase must be at least 8 characters long');
- return;
-}
+          <div className="space-y-2">
+            <Label htmlFor="signup-confirm">Confirm account password</Label>
+            <Input
+              id="signup-confirm"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              placeholder="Type it again"
+              disabled={busy}
+              required
+            />
+          </div>
 
- // Validate passphrase confirmation
- if (passphrase !== confirmPassphrase) {
- setError('Passphrases do not match');
- return;
-}
+          <Alert>
+            <Info className="h-4 w-4" aria-hidden="true" />
+            <AlertDescription className="text-sm">
+              This password controls access to your account. The master passphrase
+              you set next is what actually encrypts your credentials, and it is
+              never sent anywhere.
+            </AlertDescription>
+          </Alert>
 
- setIsRegistering(true);
+          <Button type="submit" className="w-full" disabled={busy}>
+            {busy ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                Creating account...
+              </>
+            ) : (
+              <>
+                <UserPlus className="mr-2 h-4 w-4" aria-hidden="true" />
+                Create account
+              </>
+            )}
+          </Button>
 
- try {
- // Call parent success handler with credentials
- await onSuccess(username.trim(), passphrase);
-} catch (error) {
- console.error('Registration failed:', error);
- setError(error instanceof Error ? error.message : 'Registration failed');
- setIsRegistering(false);
-}
-};
-
- const getStrengthLabel = (strength: string): string => {
- const labels = {
- 'very-weak': 'Very Weak',
- 'weak': 'Weak',
- 'fair': 'Fair',
- 'good': 'Good',
- 'strong': 'Strong',
- 'very-strong': 'Very Strong'
-};
- return labels[strength as keyof typeof labels] || 'Unknown';
-};
-
- return (
- <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
- <CardHeader className="text-center">
- {/* Keyper Logo and Title */}
- <div className="flex items-center justify-center gap-3 mb-4">
- <div className="p-1 bg-primary/15 rounded-lg border border-primary/30">
- <img
- src="/logo.png"
- alt="Keyper Logo"
- className="h-8 w-8 rounded-full object-contain"
- />
- </div>
- <h1 className="text-xl font-bold text-foreground">Keyper</h1>
- </div>
-
- <div className="mx-auto mb-4 p-3 bg-primary/10 rounded-full w-fit">
- <UserPlus className="h-8 w-8 text-primary" />
- </div>
- <CardTitle className="text-2xl">Create New User Account</CardTitle>
- <CardDescription>
- Register a new user with their own encrypted vault
- </CardDescription>
- <p className="text-xs text-muted-foreground">
- The strength meter is advisory only. Any passphrase with at least 8 characters can be used.
- </p>
- </CardHeader>
-
- <CardContent className="space-y-4">
- <form onSubmit={handleSubmit} className="space-y-4">
- {/* Username field */}
- <div className="space-y-2">
- <Label htmlFor="username">Username</Label>
- <Input
- id="username"
- type="text"
- placeholder="Enter unique username"
- value={username}
- onChange={(e) => setUsername(e.target.value)}
- disabled={isRegistering}
- className={usernameError ? 'border-red-500' : ''}
- />
- {isCheckingUsername && (
- <p className="text-xs text-muted-foreground">Checking availability...</p>
- )}
- {usernameError && (
- <p className="text-xs text-red-500">{usernameError}</p>
- )}
- {username && !usernameError && !isCheckingUsername && (
- <p className="text-xs text-green-500 flex items-center gap-1">
- <CheckCircle className="h-3 w-3" />
- Username available
- </p>
- )}
- <p className="text-xs text-muted-foreground">
- 3-50 characters, letters, numbers, hyphens, and underscores only
- </p>
- </div>
-
- {/* Passphrase field */}
- <div className="space-y-2">
- <Label htmlFor="passphrase">Master Passphrase</Label>
- <div className="relative">
- <Input
- id="passphrase"
- type={showPassphrase ?"text" :"password"}
- placeholder="Create a strong passphrase"
- value={passphrase}
- onChange={(e) => setPassphrase(e.target.value)}
- className="pr-10"
- disabled={isRegistering}
- />
- <Button
- type="button"
- variant="ghost"
- size="sm"
- className="absolute right-0 top-0 h-full px-3"
- onClick={() => setShowPassphrase(!showPassphrase)}
- >
- {showPassphrase ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
- </Button>
- </div>
-
- {/* Passphrase strength indicator */}
- {passphrase && passphraseAnalysis && (
- <div className="space-y-2">
- <div className="flex items-center justify-between text-sm">
- <span className="text-muted-foreground">Strength:</span>
- <Badge
- variant="outline"
- className="text-foreground"
- style={{ backgroundColor: getStrengthColor(passphraseAnalysis.strength)}}
- >
- {getStrengthLabel(passphraseAnalysis.strength)}
- </Badge>
- </div>
- <Progress value={passphraseAnalysis.score} className="h-2" />
- {passphraseAnalysis.warnings.length > 0 && (
- <div className="text-xs text-red-500">
- {passphraseAnalysis.warnings.slice(0, 2).join(",")}
- </div>
- )}
- {passphraseAnalysis.recommendations.length > 0 && passphraseAnalysis.warnings.length === 0 && (
- <div className="text-xs text-muted-foreground">
- {passphraseAnalysis.recommendations.slice(0, 1).join(",")}
- </div>
- )}
- </div>
- )}
- </div>
-
- {/* Confirm passphrase field */}
- <div className="space-y-2">
- <Label htmlFor="confirmPassphrase">Confirm Passphrase</Label>
- <div className="relative">
- <Input
- id="confirmPassphrase"
- type={showConfirmPassphrase ?"text" :"password"}
- placeholder="Re-enter your passphrase"
- value={confirmPassphrase}
- onChange={(e) => setConfirmPassphrase(e.target.value)}
- className="pr-10"
- disabled={isRegistering}
- />
- <Button
- type="button"
- variant="ghost"
- size="sm"
- className="absolute right-0 top-0 h-full px-3"
- onClick={() => setShowConfirmPassphrase(!showConfirmPassphrase)}
- >
- {showConfirmPassphrase ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
- </Button>
- </div>
- {confirmPassphrase && passphrase !== confirmPassphrase && (
- <p className="text-xs text-red-500">Passphrases do not match</p>
- )}
- {confirmPassphrase && passphrase === confirmPassphrase && (
- <p className="text-xs text-green-500 flex items-center gap-1">
- <CheckCircle className="h-3 w-3" />
- Passphrases match
- </p>
- )}
- </div>
-
- {error && (
- <Alert variant="destructive">
- <AlertTriangle className="h-4 w-4" />
- <AlertDescription>{error}</AlertDescription>
- </Alert>
- )}
-
- {/* Action buttons */}
- <div className="flex gap-3 pt-2">
- <Button
- type="submit"
- className="flex-1"
- disabled={
- isRegistering ||
- !username ||
- !passphrase ||
- !confirmPassphrase ||
- passphrase !== confirmPassphrase ||
- !!usernameError ||
- isCheckingUsername
-}
- >
- {isRegistering ? (
- <>
- <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
- Creating Account...
- </>
- ) : (
- <>
- <UserPlus className="h-4 w-4 mr-2" />
- Create Account
- </>
- )}
- </Button>
-
- <Button
- type="button"
- variant="outline"
- onClick={onCancel}
- disabled={isRegistering}
- >
- <ArrowLeft className="h-4 w-4 mr-2" />
- Back
- </Button>
- </div>
- </form>
-
- {/* Security notices */}
- <Alert>
- <Shield className="h-4 w-4" />
- <AlertDescription className="text-sm">
- <strong>Security Notice:</strong> Your passphrase encrypts your vault and never leaves your device.
- Losing it means losing access to your encrypted data.
- </AlertDescription>
- </Alert>
-
- <Alert className="border-blue-200 bg-blue-50/50">
- <Info className="h-4 w-4 text-blue-600" />
- <AlertDescription className="text-sm text-blue-800">
- <strong>Multi-User Support:</strong> Each user gets their own isolated encrypted vault.
- No user can access another user's data.
- </AlertDescription>
- </Alert>
- </CardContent>
- </Card>
- );
+          <p className="text-center text-sm text-muted-foreground">
+            Already have an account?{' '}
+            <button
+              type="button"
+              onClick={onSwitchToSignIn}
+              className="text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded"
+            >
+              Sign in
+            </button>
+          </p>
+        </form>
+      </CardContent>
+    </Card>
+  );
 }

@@ -16,6 +16,7 @@ export type Database = {
           icon: string | null
           id: string
           name: string
+          owner_id: string
           user_id: string
         }
         Insert: {
@@ -24,6 +25,7 @@ export type Database = {
           icon?: string | null
           id?: string
           name: string
+          owner_id?: string
           user_id?: string
         }
         Update: {
@@ -32,6 +34,7 @@ export type Database = {
           icon?: string | null
           id?: string
           name?: string
+          owner_id?: string
           user_id?: string
         }
         Relationships: []
@@ -47,6 +50,7 @@ export type Database = {
           id: string
           last_accessed: string | null
           notes: string | null
+          owner_id: string
           priority: string
           secret_blob: Json
           tags: string[] | null
@@ -66,13 +70,14 @@ export type Database = {
           id?: string
           last_accessed?: string | null
           notes?: string | null
+          owner_id?: string
           priority?: string
           secret_blob: Json
           tags?: string[] | null
           title: string
           updated_at?: string
           url?: string | null
-          user_id: string
+          user_id?: string
           username?: string | null
         }
         Update: {
@@ -85,6 +90,7 @@ export type Database = {
           id?: string
           last_accessed?: string | null
           notes?: string | null
+          owner_id?: string
           priority?: string
           secret_blob?: Json
           tags?: string[] | null
@@ -96,30 +102,37 @@ export type Database = {
         }
         Relationships: []
       }
+      // raw_dek and bcrypt_hash are legacy columns from the pre-migration
+      // schema. They are optional and nullable because current databases have
+      // dropped them, mid-migration ones still carry them, and the client has
+      // to compile against both. New rows never populate either.
       vault_config: {
         Row: {
-          bcrypt_hash: string
+          bcrypt_hash?: string | null
           created_at: string
           id: string
-          raw_dek: string
+          owner_id: string
+          raw_dek?: string | null
           updated_at: string
           user_id: string
           wrapped_dek: Json | null
         }
         Insert: {
-          bcrypt_hash: string
+          bcrypt_hash?: string | null
           created_at?: string
           id?: string
-          raw_dek: string
+          owner_id?: string
+          raw_dek?: string | null
           updated_at?: string
           user_id?: string
           wrapped_dek?: Json | null
         }
         Update: {
-          bcrypt_hash?: string
+          bcrypt_hash?: string | null
           created_at?: string
           id?: string
-          raw_dek?: string
+          owner_id?: string
+          raw_dek?: string | null
           updated_at?: string
           user_id?: string
           wrapped_dek?: Json | null

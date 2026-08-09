@@ -16,8 +16,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/comp
 import { Progress} from '@/components/ui/progress';
 import { Badge} from '@/components/ui/badge';
 import { Alert, AlertDescription} from '@/components/ui/alert';
-import { getCurrentUsername} from '@/integrations/supabase/client';
-import UserRegistration from '@/components/UserRegistration';
+import { getDisplayName, isAuthRequired} from '@/integrations/supabase/auth';
+import { getCurrentUsername, saveCurrentUsername} from '@/integrations/supabase/client';
 import {
  Lock,
  Unlock,
@@ -46,8 +46,6 @@ interface PassphraseGateProps {
  className?: string;
 }
 
-const SHOW_REGISTRATION_KEY = 'keyper-show-registration';
-
 export default function PassphraseGate({
  children,
  onUnlock,
@@ -57,8 +55,17 @@ export default function PassphraseGate({
  showMetrics = false,
  className =""
 }: PassphraseGateProps) {
+ // Local providers (SQLite, Neon) have no session, so the vault is chosen by a
+ // local username typed right here. On Supabase this field stays hidden: the
+ // account is the identity, and a username box would wrongly imply you can
+ // reach a different vault just by typing a different name.
+ const localMode = !isAuthRequired();
+
  const [isUnlocked, setIsUnlocked] = useState(vaultManager.isUnlocked());
- const [username, setUsername] = useState('');
+ const [accountName, setAccountName] = useState('');
+ const [localUsername, setLocalUsername] = useState(() =>
+ localMode ? getCurrentUsername() : '',
+ );
  const [passphrase, setPassphrase] = useState('');
  const [showPassphrase, setShowPassphrase] = useState(false);
  const [error, setError] = useState<string | null>(null);
@@ -67,7 +74,6 @@ export default function PassphraseGate({
  const [passphraseAnalysis, setPassphraseAnalysis] = useState<PassphraseAnalysis | null>(null);
  const [isFirstTime, setIsFirstTime] = useState<boolean | null>(null);
  const [showSetup, setShowSetup] = useState(false);
- const [showRegistration, setShowRegistration] = useState(false);
 
  const { toast} = useToast();
 
@@ -106,32 +112,37 @@ export default function PassphraseGate({
 }
 }, [onUnlock, onLock, toast]);
 
-// Initialize username to blank by default
+// Show who is signed in, so it is obvious which vault is about to open.
 useEffect(() => {
- setUsername(getCurrentUsername());
-
- if (localStorage.getItem(SHOW_REGISTRATION_KEY) === 'true') {
- setShowRegistration(true);
- localStorage.removeItem(SHOW_REGISTRATION_KEY);
-}
+ void getDisplayName().then(setAccountName);
 }, []);
 
- // Check if this is a first-time user or if database is not properly configured
+ // Does this vault already exist? On local providers this depends on the
+ // username being typed, so it is re-checked as that changes, debounced so we
+ // are not querying on every keystroke.
  useEffect(() => {
+ const trimmed = localUsername.trim();
+
  const checkFirstTimeUser = async () => {
  try {
- const firstTime = await vaultManager.isFirstTimeUser();
- setIsFirstTime(firstTime);
+ if (localMode && trimmed && trimmed !== getCurrentUsername()) {
+ saveCurrentUsername(trimmed);
+ vaultManager.clearSession();
+}
+ setIsFirstTime(await vaultManager.isFirstTimeUser());
 } catch (error: unknown) {
  console.error('Error checking first-time user status:', error);
- // If we can't check the database, assume we need to show setup
- setIsFirstTime(true);
- setError('Database connection failed. Please check your configuration.');
+ // Deliberately leave isFirstTime null rather than defaulting to true.
+ // Guessing "new user" when the vault merely failed to load would offer
+ // to create a fresh vault over one that already exists.
+ setIsFirstTime(null);
+ setError('Could not reach your vault. Check your database configuration and try again.');
 }
 };
 
- checkFirstTimeUser();
-}, [username]); // Re-check when username changes
+ const timer = setTimeout(() => void checkFirstTimeUser(), localMode ? 350 : 0);
+ return () => clearTimeout(timer);
+}, [localMode, localUsername]);
 
  // Setup vault event listener and auto-lock
  useEffect(() => {
@@ -168,8 +179,9 @@ useEffect(() => {
  const handleSubmit = async (e: React.FormEvent) => {
  e.preventDefault();
 
- if (!username || username.trim() === '') {
- setError("Username is required");
+ const trimmedUsername = localUsername.trim();
+ if (localMode && !trimmedUsername) {
+ setError("Enter a username to choose which vault to open");
  return;
 }
 
@@ -183,12 +195,19 @@ useEffect(() => {
  setError(null);
 
  try {
- vaultManager.switchUserContext(username.trim());
- console.log('🔧 Switched vault context to:', username.trim());
+ // On local providers the typed username selects the vault, so switch
+ // context before doing anything else. clearSession() drops any key still
+ // held in memory, otherwise switching users could leave the previous
+ // vault's key loaded against the new user's rows.
+ if (localMode && trimmedUsername !== getCurrentUsername()) {
+ saveCurrentUsername(trimmedUsername);
+ vaultManager.clearSession();
+}
 
- const isFirstTime = await vaultManager.isFirstTimeUser();
+ // On Supabase, identity comes from the signed-in session instead.
+ const firstTime = await vaultManager.isFirstTimeUser();
 
- if (isFirstTime) {
+ if (firstTime) {
  console.log('🆕 Creating new vault...');
  await vaultManager.createVault(trimmedPassphrase);
 } else {
@@ -206,37 +225,6 @@ useEffect(() => {
 
  const handleLock = () => {
  vaultManager.lockVault();
-};
-
- const handleRegistrationSuccess = async (newUsername: string, newPassphrase: string) => {
- try {
- setIsUnlocking(true);
- setError(null);
-
- // Register the new user
- await vaultManager.registerNewUser(newUsername, newPassphrase);
-
- // Registration successful - the vault is now unlocked
- setShowRegistration(false);
- setUsername(newUsername);
- setPassphrase('');
- 
- toast({
- title:"🎉 Account Created!",
- description: `Welcome ${newUsername}! Your encrypted vault is ready.`,
-});
-} catch (error) {
- console.error('💥 Registration failed:', error);
- setError(error instanceof Error ? error.message :"Registration failed");
-} finally {
- setIsUnlocking(false);
-}
-};
-
- const handleRegistrationCancel = () => {
- setShowRegistration(false);
- localStorage.removeItem(SHOW_REGISTRATION_KEY);
- setError(null);
 };
 
  const formatTime = (ms: number): string => {
@@ -301,12 +289,6 @@ useEffect(() => {
  return (
  <>
  <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-40 p-4">
- {showRegistration ? (
- <UserRegistration
- onSuccess={handleRegistrationSuccess}
- onCancel={handleRegistrationCancel}
- />
- ) : (
  <Card className="w-full max-w-md">
  <CardHeader className="text-center">
  {/* Keyper Logo and Title */}
@@ -333,23 +315,37 @@ useEffect(() => {
  : 'Enter your passphrase to unlock your secure credential vault'
 }
  </CardDescription>
+ {/* Only meaningful on Supabase. In local mode the username field
+ below already shows which vault is being opened. */}
+ {!localMode && accountName && (
+ <p className="text-xs text-muted-foreground pt-1">
+ Signed in as <span className="font-medium text-foreground">{accountName}</span>
+ </p>
+ )}
  </CardHeader>
 
  <CardContent className="space-y-4">
  <form onSubmit={handleSubmit} className="space-y-4">
  <div className="space-y-4">
- {/* Username field */}
+ {/* Username field, local providers only. On Supabase the account
+ already decides which vault this is. */}
+ {localMode && (
  <div className="space-y-2">
- <Label htmlFor="username">Username</Label>
+ <Label htmlFor="local-username">Username</Label>
  <Input
- id="username"
+ id="local-username"
  type="text"
- placeholder="Enter username"
- value={username}
- onChange={(e) => setUsername(e.target.value)}
+ autoComplete="username"
+ placeholder="e.g. jess (leave as-is for the default vault)"
+ value={localUsername}
+ onChange={(e) => setLocalUsername(e.target.value)}
  disabled={isUnlocking}
  />
+ <p className="text-xs text-muted-foreground">
+ Each username has its own vault and its own passphrase. Change it here to switch.
+ </p>
  </div>
+ )}
 
  {/* Passphrase field */}
  <div className="space-y-2">
@@ -442,44 +438,25 @@ useEffect(() => {
  </>
  )}
  </Button>
-
- {/* Create New User Button */}
- <Button
- type="button"
- variant="outline"
- className="w-full"
- onClick={() => setShowRegistration(true)}
- disabled={isUnlocking}
- >
- <UserPlus className="h-4 w-4 mr-2" />
- Create New User
- </Button>
  </form>
 
  <Alert>
  <Info className="h-4 w-4" />
  <AlertDescription className="text-sm">
- Your passphrase is used for client-side encryption. Losing it means losing access to your encrypted data.
- </AlertDescription>
- </Alert>
-
- <Alert className="border-blue-200 bg-blue-50/50">
- <Info className="h-4 w-4 text-blue-600" />
- <AlertDescription className="text-sm text-blue-800">
- <strong>Multi-User Tip:</strong> When switching between different user accounts, refresh the page after logging out for optimal vault isolation.
+ This passphrase encrypts your credentials and never leaves your device.
+ Keep a copy somewhere safe, since it is the only thing that unlocks your vault.
  </AlertDescription>
  </Alert>
 
  {showMetrics && (
  <div className="pt-4 border-t">
  <div className="text-xs text-muted-foreground text-center">
- 🔐 End-to-end encrypted • 🛡️ Zero-knowledge architecture
+ 🔐 End-to-end encrypted • 🔑 Key never leaves this device
  </div>
  </div>
  )}
  </CardContent>
  </Card>
- )}
  </div>
  </>
  );

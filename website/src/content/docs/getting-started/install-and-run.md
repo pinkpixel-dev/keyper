@@ -108,8 +108,10 @@ npm run electron:build:win     # NSIS installer
    - **Neon Postgres** — enter your Neon Cloud or Neon Local Docker connection string, then run `neon-setup.sql` to create required tables/policies.
 3. Return to the app, test connection, and save.
 4. Unlock or initialize your vault using your master passphrase.
-5. For additional users, choose **Create New User** on the lock screen or use **Dashboard Settings → User Management → Add New User**.
-6. To switch accounts later, use **Dashboard Settings → User Management** and then unlock with that user’s passphrase.
+5. For additional users:
+   - **Supabase** — each person signs up with their own email from the sign-in screen.
+   - **SQLite / Neon** — enter a different username on the unlock screen; each one gets its own vault and passphrase.
+6. To switch later: on Supabase, sign out and sign in as that account. On SQLite and Neon, change the username on the unlock screen, then unlock with that vault's passphrase.
 
 ## Verify health
 

@@ -1,11 +1,13 @@
 import React, { useState, useEffect, Suspense} from 'react';
 import type { User} from '@supabase/supabase-js';
 import { getSupabaseCredentials, hasConfiguredDatabase, getCurrentUsername, supabase, refreshSupabaseClient} from '@/integrations/supabase/client';
+import { getOwnerId, ownerColumn, getCurrentUser} from '@/integrations/supabase/auth';
 import { Button} from '@/components/ui/button';
 import { Settings as SettingsIcon, ArrowLeft, Plus, Shield, RefreshCw, Database, Lock} from 'lucide-react';
 import { useToast} from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import PassphraseGate from '@/components/PassphraseGate';
+import AuthGate from '@/components/auth/AuthGate';
 import type { SecretBlobV1} from '@/crypto/types';
 
 // Lazy load heavy components
@@ -55,8 +57,10 @@ export interface Category {
  icon?: string;
 }
 
-// Create mock user object for self-hosted version (no authentication required)
-const createMockUser = (): User => {
+// Placeholder user for the local providers (SQLite, Neon), which have no
+// session to read. On Supabase the real session user is used instead; this only
+// ever feeds the header display.
+const createLocalUser = (): User => {
  const currentUsername = getCurrentUsername();
  return {
  id: currentUsername,
@@ -93,6 +97,7 @@ export const SelfHostedDashboard: React.FC = () => {
  // Credential management state
  const [credentials, setCredentials] = useState<Credential[]>([]);
  const [categories, setCategories] = useState<Category[]>([]);
+ const [sessionUser, setSessionUser] = useState<User | null>(null);
  const [loading, setLoading] = useState(true);
  const [searchTerm, setSearchTerm] = useState('');
  const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -117,6 +122,7 @@ export const SelfHostedDashboard: React.FC = () => {
 
  // Always try to fetch data if configured
  if (hasConfiguredStorage) {
+ void getCurrentUser().then(setSessionUser);
  fetchCredentials();
  fetchCategories();
 } else {
@@ -139,13 +145,19 @@ export const SelfHostedDashboard: React.FC = () => {
 
  const fetchCredentials = async () => {
  try {
- // For self-hosted version, filter by the current username
- const currentUsername = getCurrentUsername();
+ // This component's effects run before AuthGate decides what to render, so
+ // a signed-out visit would otherwise fire a doomed query and pop an error
+ // toast over the sign-in form. No session simply means nothing to fetch.
+ const ownerId = await getOwnerId();
+ if (!ownerId) {
+ setCredentials([]);
+ return;
+}
 
  const { data, error} = await supabase
  .from('credentials')
  .select('*')
- .eq('user_id', currentUsername)
+ .eq(ownerColumn(), ownerId)
  .order('updated_at', { ascending: false});
 
  if (error) throw error;
@@ -163,44 +175,24 @@ export const SelfHostedDashboard: React.FC = () => {
 
  const fetchCategories = async () => {
  try {
- // For self-hosted version, get categories for current user AND default categories
- const currentUsername = getCurrentUsername();
+ // Every account gets its own default categories when its vault is created,
+ // so there is no shared pool to merge in and nothing to de-duplicate. The
+ // query is scoped to the owner and that is the whole story.
+ const ownerId = await getOwnerId();
+ if (!ownerId) {
+ setCategories([]);
+ return;
+}
 
- // Fetch all categories and filter in JavaScript for better control
  const { data, error} = await supabase
  .from('categories')
  .select('*')
+ .eq(ownerColumn(), ownerId)
  .order('name');
 
  if (error) throw error;
 
- // Filter to include:
- // 1. Default categories (user_id = null, empty, or 'self-hosted-user')
- // 2. User-specific categories (user_id = currentUsername)
- const filteredCategories = ((data as (Category & { user_id?: string})[]) || []).filter(category => {
- const categoryUserId = category.user_id;
- const isDefaultCategory = !categoryUserId || categoryUserId === null || categoryUserId === '' || categoryUserId === 'self-hosted-user';
- const isUserCategory = categoryUserId === currentUsername;
-
- return isDefaultCategory || isUserCategory;
-});
-
- const dedupedCategories = Array.from(
- filteredCategories.reduce((map, category) => {
- const existing = map.get(category.name);
- const existingIsDefault = !existing?.user_id || existing.user_id === 'self-hosted-user';
- const nextIsUserSpecific = category.user_id === currentUsername;
-
- // Prefer the current user's category over the shared default if both exist.
- if (!existing || (existingIsDefault && nextIsUserSpecific)) {
- map.set(category.name, category);
-}
-
- return map;
-}, new Map<string, typeof filteredCategories[number]>()),
- ).map(([, category]) => category);
-
- setCategories(dedupedCategories as Category[]);
+ setCategories((data || []) as Category[]);
 } catch (error: unknown) {
  console.error('Error fetching categories:', error);
 }
@@ -373,8 +365,11 @@ export const SelfHostedDashboard: React.FC = () => {
 });
 };
 
- // Step 3: Show vault unlock (PassphraseGate) and main dashboard
+ // Step 3: Require a session, then the master passphrase, then the dashboard.
+ // Two gates because they protect different things: AuthGate decides whether
+ // the database returns your rows, PassphraseGate decides whether they decrypt.
  return (
+ <AuthGate>
  <PassphraseGate
  autoLockMs={15 * 60 * 1000} // 15 minutes
  showMetrics={false}
@@ -402,7 +397,7 @@ export const SelfHostedDashboard: React.FC = () => {
  <div className="min-h-screen bg-dot-pattern text-foreground">
  <Suspense fallback={<div className="h-20 bg-card/50 animate-pulse" />}>
  <DashboardHeader
- user={createMockUser()}
+ user={sessionUser ?? createLocalUser()}
  onAddCredential={() => setIsAddModalOpen(true)}
  onRefresh={handleRefresh}
  />
@@ -472,5 +467,6 @@ export const SelfHostedDashboard: React.FC = () => {
  </div>
  </div>
  </PassphraseGate>
+ </AuthGate>
  );
 };

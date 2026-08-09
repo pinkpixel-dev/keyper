@@ -7,6 +7,93 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-09 - 🔐 **Accounts, Owner-Scoped Database Rules & Wrapped Vault Key**
+
+Keyper now signs you in to a real account before opening your vault, and stores
+the vault key encrypted under your master passphrase. Existing installs need a
+one-time database update; see the upgrade notes below and back up first.
+
+Thanks to **Cenk Kurtoglu** ([github.com/cekuu35](https://github.com/cekuu35))
+for reviewing the shipped setup SQL and reporting this privately.
+
+### 🔐 Security
+
+- **Fixed** The Row Level Security policies were more permissive than intended. All twelve were written as `USING (true)` with no `TO` clause, so they applied to `PUBLIC` rather than to the signed-in owner, and the anon role was included. The database was therefore not enforcing the separation the app assumed. Policies are now scoped `TO authenticated` with `owner_id = (SELECT auth.uid())`.
+- **Changed** `vault_config.raw_dek` stored the data encryption key in a form the server could use directly. The key is now stored only wrapped under an Argon2id key derived from the master passphrase, so a copy of the database cannot decrypt anything on its own.
+- **Changed** The bcrypt passphrase reset depended on the key being stored separately from the passphrase, so it no longer applies. Both `raw_dek` and `bcrypt_hash` are removed, and the passphrase is no longer recoverable.
+- **Fixed** `get_credential_stats()` ran as `SECURITY DEFINER` while reading the `credentials` table, which meant it did not inherit the caller's row rules. It is now `SECURITY INVOKER` and owner-scoped.
+- **Changed** Per-user separation was previously applied by the app filtering on a `user_id` string from `localStorage`. It is now enforced by the database.
+- **Fixed** The setup SQL shown in Settings was a second copy of `supabase-setup.sql` that had drifted out of date, so pasting it from the app installed the older rules. Settings now reads the shipped file directly at build time.
+- **Added** `REVOKE ALL ... FROM anon` on all three tables, so the anon role holds no table privileges at all.
+
+### 🔐 Authentication
+
+- **Added** Supabase Auth. Keyper now requires a real session; the anon key alone opens nothing.
+- **Added** `AuthGate`, which requires a session before the dashboard renders, and `SignInForm` with sign-in, sign-up and account password reset.
+- **Changed** `UserRegistration` creates a real account instead of registering an unauthenticated username.
+- **Changed** `UserSwitcher` is now an account panel showing who is signed in, with sign out. The old user list is gone because enumerating other users required exactly the unrestricted read this release removes.
+- **Changed** The passphrase screen no longer asks for a username. Identity comes from the session.
+- **Added** Sign-out and token expiry clear the decrypted key from memory.
+
+### 🔑 Encryption
+
+- **Added** `src/crypto/dek.ts` handling DEK generation, wrapping, unwrapping and re-wrapping, with the vault key imported as a non-extractable `CryptoKey`.
+- **Added** Passphrase change, which re-wraps the same vault key so nothing needs re-encrypting and existing credentials keep working.
+- **Changed** The wrong passphrase is now rejected by AES-GCM tag verification during unwrap. That failure is the check; there is no separate stored verifier.
+- **Removed** `raw_dek` and `bcrypt_hash` from new installs, along with the `bcrypt` verification path.
+
+### 🧪 Testing
+
+- **Added** `tests/rls/` — a real Postgres suite that applies the shipped `supabase-setup.sql` against a Supabase auth shim and asserts anon is refused, one account cannot read another's vault key, `WITH CHECK` blocks cross-owner writes, and an unqualified `DELETE` cannot empty another account's vault. Run with `npm run test:rls`.
+- **Added** DEK unit tests covering round-trip, wrong-passphrase rejection, tamper detection, key non-extractability, and that neither the DEK nor the passphrase appears in the wrapped output.
+- **Added** A test running against real PBKDF2, since the shared setup mocks Argon2 and no other test exercised a genuine KDF.
+- **Added** Schema guards that fail the build if unconditional policies or plaintext key columns reappear.
+- **Changed** Test count went from 97 to 123, all passing.
+
+### 📝 Documentation
+
+- **Changed** README security claims now match what the code does, including a security model table and a plainly stated limitations section.
+- **Added** An explicit note that only `secret_blob` is encrypted; titles, usernames, URLs, notes and tags are plaintext.
+- **Added** A warning that Neon mode puts a full database credential in the browser, which RLS cannot constrain. `neon-setup.sql` no longer creates policies that imply otherwise.
+- **Added** `migration/`, a five-step migration for existing deployments. Each script is complete on its own, checks its own preconditions, and refuses safely if run out of order, so pasting one early cannot half-apply the change.
+- **Added** `RELEASE.md` with upgrade steps and the full breaking-change list.
+
+### 🧭 Upgrade experience
+
+- **Added** Detection for databases that predate this release. Keyper probes for the ownership column on startup and, if it is missing, shows a guided screen instead of a generic failure.
+- **Added** The upgrade screen walks through all nine steps with a copy button per script, expected output for each, red call-outs on the points people actually get wrong, and tick-off progress that survives a reload, since the flow moves between Keyper and the Supabase dashboard.
+- **Added** `MIGRATION.md`, a full walkthrough with expected output per step and a troubleshooting section covering every error the scripts can produce.
+- **Added** A matching walkthrough on the docs site with per-script copy buttons, reading the same files at build time so the docs cannot drift from what ships.
+- **Added** Prominent upgrade notices at the top of the README and in its upgrade section.
+- **Added** The probe runs before sign-in, since the old permissive policies still allow it. Telling someone to create an account and then failing afterwards would waste their time.
+- **Added** A pre-flight guard in `supabase-setup.sql` that aborts if the database already contains credentials or a vault config, so nobody destroys a live vault by running the fresh-install script instead of the migration.
+- **Changed** The un-migrated case previously surfaced as "Could not reach your vault", which reads like data loss and invites exactly the wrong reaction.
+
+### ⚙️ Settings
+
+- **Removed** The "Reset Master Passphrase" instructions, which walked users through generating a bcrypt hash on a third-party website and pasting it into `vault_config.bcrypt_hash`. That flow only worked because the vault key was stored separately in usable form, so it was a way around the encryption rather than a feature beside it. It also meant typing a new passphrase into someone else's web page.
+- **Added** A real **Change Master Passphrase** form in its place. It re-wraps the same vault key, so nothing is re-encrypted and every credential keeps working. Requires the current passphrase.
+- **Added** A **Start over** panel that is honest about the alternative: a forgotten passphrase cannot be recovered, and the only option is deleting the vault. Requires typing a confirmation phrase.
+- **Removed** The "Existing Database Update Script" section, which applied a credential-type change from several versions back and only added confusion next to the 1.3.0 migration.
+- **Added** An **About** tab with the version, links to the website, docs, security model, GitHub, issues and changelog, plus the support email.
+- **Fixed** The version in Settings was hardcoded as `0.1.0`. It now comes from `package.json` through the new `src/lib/app-info.ts`, so there is one place it is set.
+- **Fixed** System Information described a bcrypt-only architecture with user-controlled reset, and linked to `docs/EMERGENCY_PASSPHRASE_RESET.md`, which does not exist. It now reports what the app is actually doing and links to the security model.
+- **Fixed** User Management still said emergency resets work through each user's bcrypt hash.
+- **Changed** `DashboardSettings.tsx` split into focused cards under `src/components/dashboard/settings/`, taking it from 569 lines to under 300.
+
+### 📮 Support
+
+- **Added** `support@keyper.icu` as the support address, surfaced in the app's About tab, the README, and a new Support page on the docs site.
+- **Added** A Support page covering where to ask, what to include, and an explicit list of things never to send: master passphrase, account password, connection strings, service role keys, or `vault_config` contents.
+- **Changed** The package description no longer advertises "emergency recovery", which no longer exists.
+
+### ⚠️ Breaking Changes
+
+- **Supabase users need to enable the Email auth provider** and create an account. The anon key alone no longer opens a vault.
+- **Existing databases need the scripts in `migration/`.** Run them in order: check, claim your rows, apply the new rules, unlock once in the app so Keyper moves your vault key across, confirm, then remove the old columns. Take a backup first. Only the second script needs an edit.
+- **The master passphrase can no longer be reset.** It can be changed whenever you know the current one, but nothing stored can recover it. Keep a copy somewhere safe.
+- **Switching accounts on Supabase means signing out and back in.** The old in-app user list relied on reading other users' rows. SQLite and Neon keep their username switcher on the unlock screen.
+
 ## [1.2.2] - 2026-08-08 - 🔒 **Dependency Security**
 
 ### 🔒 Dependency Security

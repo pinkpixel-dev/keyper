@@ -265,6 +265,16 @@ export const supabase = {
   },
 };
 
+/**
+ * The real Supabase client, for auth calls.
+ *
+ * Deliberately separate from the `supabase` compatibility wrapper above: that
+ * wrapper routes `from()` to whichever provider is active, and SQLite and Neon
+ * have no auth at all. Anything touching sessions needs the genuine client, so
+ * it asks for it explicitly rather than getting a provider-dependent object.
+ */
+export const getAuthClient = () => supabaseClient;
+
 // Function to create a new Supabase client with the latest credentials
 export const createSupabaseClient = () => {
   const { supabaseUrl, supabaseKey } = getSupabaseCredentials();
