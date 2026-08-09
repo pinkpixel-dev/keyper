@@ -256,7 +256,7 @@ export const DashboardSettings: React.FC<DashboardSettingsProps> = ({ onUserCont
  <Alert>
  <Shield className="h-4 w-4" />
  <AlertDescription>
- Current user: <strong>{currentUser}</strong>. Security level: <strong>Maximum (No Admin Backdoors)</strong>.
+ Current user: <strong>{currentUser}</strong>. Security level: <strong>Maximum</strong>.
  </AlertDescription>
  </Alert>
  <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-4">
@@ -514,7 +514,7 @@ export const DashboardSettings: React.FC<DashboardSettingsProps> = ({ onUserCont
  <div className="space-y-1">
  <Label className="text-sm font-medium">Security Level</Label>
  <p className="text-sm text-green-400 font-medium">
- Maximum (No Admin Backdoors)
+ Maximum
  </p>
  </div>
  </div>
