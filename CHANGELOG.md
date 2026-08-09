@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-08-08 - 🔒 **Dependency Security**
+
+### 🔒 Dependency Security
+- **Updated** Updated dependencies to address vulnerabilities.
+
 ## [1.2.1] - 2026-06-24 - 🎨 **Grid/List Layout · 🔒 Dependency Security**
 
 ### 🎨 Dashboard UX & Layout

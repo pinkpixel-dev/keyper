@@ -1,6 +1,6 @@
 {
   "name": "@pinkpixel/keyper",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "🔐 A self-hosted credential manager with zero-knowledge encryption, multi-user support, and emergency recovery. Store API keys, passwords, and secrets securely with your own Supabase database.",
   "type": "module",
   "main": "electron-dist/main.js",
@@ -169,5 +169,13 @@
   },
   "overrides": {
     "serialize-javascript": "^7.0.3"
+  },
+  "allowScripts": {
+    "@swc/core@1.15.18": true,
+    "better-sqlite3@12.6.2": true,
+    "electron@39.8.10": true,
+    "esbuild@0.28.1": true,
+    "electron-winstaller@5.4.0": true,
+    "workerd@1.20260801.1": true
   }
 }

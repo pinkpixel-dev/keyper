@@ -514,9 +514,9 @@ npm run electron:build:win     # NSIS / Windows build tooling required
 
 ### Version Information
 
-- **Current Version**: 1.2.1
-- **Release Date**: June 2026
-- **Last Updated**: June 2026
+- **Current Version**: 1.2.2
+- **Release Date**: August 2026
+- **Last Updated**: August 2026
 - **Status**: Stable Production Release 🟢
 - **License**: Apache 2.0
   | **User Interface** | ✅ Complete | Full responsive design |
