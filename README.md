@@ -28,6 +28,16 @@ _A modern, secure, self-hosted credential management application for storing and
 
 ---
 
+> ## ⚠️ Upgrading from an earlier version?
+>
+> **1.3.0 needs a one-time database update if you use Supabase.**
+> Please read **[MIGRATION.md](MIGRATION.md)** before you update. It takes five
+> minutes and covers every step with expected output and troubleshooting.
+>
+> SQLite and Neon users, and anyone installing fresh, can skip it.
+
+---
+
 ## 📥 Download
 
 Desktop installers are available on the **[Keyper website](https://keyper.icu/getting-started/install-and-run/)** or on the [GitHub releases page](https://github.com/pinkpixel-dev/keyper/releases).
@@ -261,9 +271,23 @@ Installers are output to `dist-electron/`.
 
 ## 🔄 Upgrading to 1.3.0
 
-If you already use Keyper with Supabase, 1.3.0 needs a one-time database update
-before it will run. It takes a few minutes. Keyper walks you through it in the
-app, and this is the same thing written down.
+> ### 📖 **[→ Read the full Migration Guide](MIGRATION.md)**
+>
+> **If you already use Keyper with Supabase, please read
+> [MIGRATION.md](MIGRATION.md) in full before you start.** It is a five-minute
+> read and it walks through every step with expected output and troubleshooting.
+> Keyper also guides you through the same steps in the app.
+
+1.3.0 needs a one-time database update before it will open an existing vault.
+
+### The three rules
+
+1. **Run the five scripts one at a time, in order.** Do not paste them all in together.
+2. **Back up first.** Supabase → Database → Backups.
+3. **Do not run `supabase-setup.sql`.** That is for new installs only.
+
+Every script checks itself before changing anything, so running one out of order
+stops safely and tells you where to go back to. Nothing half-applies.
 
 ### What changed
 
@@ -278,42 +302,38 @@ vault key in a stronger form.
   to be stored in a form the server could read directly. This means a copy of the
   database is no longer enough to decrypt anything.
 
-Your credentials themselves are unchanged and are not re-encrypted.
+Your credentials are not changed and not re-encrypted.
 
-### Steps
+### The short version
 
-1. **Back up your database.** Supabase → Database → Backups.
-2. **Enable Email sign-in.** Supabase → Authentication → Providers → Email.
-3. **Create your account.** Authentication → Users → Add user. Copy the account's
-   UUID from the users list.
-4. **Run `migration-auth-rls.sql`** in the SQL editor, following its stages in
-   order. There is one line to edit: paste your UUID into `target_owner` in the
-   Stage 1c block. Stop when Stage 1 is done.
-5. **Update Keyper, sign in, and unlock** with your existing master passphrase.
-   Keyper moves your vault key to the new format automatically. This is quick,
-   since nothing is re-encrypted.
-6. **Run Stage 3** to remove the old key columns.
+| # | Where | What |
+|---|---|---|
+| 1 | Supabase | Back up your database |
+| 2 | Supabase | Authentication → Providers → enable Email |
+| 3 | Supabase | Authentication → Users → Add user |
+| 4 | SQL Editor | Run [`migration/01-check.sql`](migration/01-check.sql), copy your account UUID |
+| 5 | SQL Editor | Run [`migration/02-claim-your-data.sql`](migration/02-claim-your-data.sql) — **paste your UUID into the one marked line** |
+| 6 | SQL Editor | Run [`migration/03-apply-security.sql`](migration/03-apply-security.sql) |
+| 7 | Keyper | Sign in, then unlock with your **existing** master passphrase |
+| 8 | SQL Editor | Run [`migration/04-check-key.sql`](migration/04-check-key.sql) to confirm |
+| 9 | SQL Editor | Run [`migration/05-remove-old-key.sql`](migration/05-remove-old-key.sql) |
 
-> **Use `migration-auth-rls.sql`, not `supabase-setup.sql`.** The setup script is
-> for new installs, and now stops on its own if it finds existing data.
->
-> **Do steps 5 and 6 in that order.** Stage 3 removes the old key, so running it
-> before Keyper has moved the key across leaves the vault unreadable.
+Only step 5 needs an edit. Everything else is paste-and-run.
 
-### Two things to know afterwards
+### Two things to know before you start
 
-- **You sign in first, then enter your master passphrase.** Two separate secrets:
-  the account password gets you your data, the passphrase decrypts it.
-- **The master passphrase can no longer be reset.** You can change it whenever you
-  like as long as you know the current one, but there is no longer a stored value
-  that could recover it for you. Keep a copy somewhere safe.
+**You will have two secrets, not one.** The account password you create in step 3
+gets you your rows. Your existing master passphrase decrypts them. They are
+different, and you need both.
 
-If you ran Keyper on a publicly reachable URL, note that under the old rules the
-public anon key allowed access to vault rows. Once you have migrated, it is worth
-updating any credentials you stored during that time. If you only ever ran Keyper
-locally, there is nothing extra to do.
+**Your master passphrase can no longer be reset.** You can change it whenever you
+know the current one, but nothing stored can recover it. Older versions allowed a
+reset only because the vault key sat separately in usable form, which is the
+thing being fixed. **Write your passphrase down somewhere safe before you start.**
 
-Full detail is in [RELEASE.md](RELEASE.md) and [CHANGELOG.md](CHANGELOG.md).
+Full detail, expected output at each step, and troubleshooting:
+**[MIGRATION.md](MIGRATION.md)**
+
 ---
 
 ## 🗄️ Database Setup

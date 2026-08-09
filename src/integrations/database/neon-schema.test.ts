@@ -16,7 +16,9 @@ function readSql(file: string): string {
 
 const neonSql = readSql('neon-setup.sql');
 const supabaseSql = readSql('supabase-setup.sql');
-const migrationSql = readSql('migration-auth-rls.sql');
+const migrationSql = ['02-claim-your-data.sql', '05-remove-old-key.sql']
+  .map((f) => readSql(`migration/${f}`))
+  .join('\n');
 
 /** Strip SQL line comments so prose about a pattern never satisfies a check. */
 function stripComments(sql: string): string {

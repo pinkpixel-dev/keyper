@@ -1,7 +1,7 @@
 /**
  * Detects a database that predates the v1.3.0 security migration.
  *
- * Upgrading the app without running migration-auth-rls.sql leaves the client
+ * Upgrading the app without running the migration/ scripts leaves the client
  * asking for an owner_id column that does not exist yet. Without this check the
  * user sees a generic "could not reach your vault" error on a vault full of
  * credentials, which reads like data loss and invites exactly the wrong
@@ -24,7 +24,7 @@ const UNDEFINED_COLUMN = '42703';
 export type SchemaState =
   /** Schema is current, or we have no reason to think otherwise. */
   | 'ok'
-  /** owner_id is missing. migration-auth-rls.sql Stage 1 has not been run. */
+  /** owner_id is missing. migration/02-claim-your-data.sql has not been run. */
   | 'needs-migration'
   /** Could not reach the database at all. Not a schema problem. */
   | 'unreachable';

@@ -55,12 +55,16 @@ for reviewing the shipped setup SQL and reporting this privately.
 - **Changed** README security claims now match what the code does, including a security model table and a plainly stated limitations section.
 - **Added** An explicit note that only `secret_blob` is encrypted; titles, usernames, URLs, notes and tags are plaintext.
 - **Added** A warning that Neon mode puts a full database credential in the browser, which RLS cannot constrain. `neon-setup.sql` no longer creates policies that imply otherwise.
-- **Added** `migration-auth-rls.sql`, a staged migration for existing deployments.
+- **Added** `migration/`, a five-step migration for existing deployments. Each script is complete on its own, checks its own preconditions, and refuses safely if run out of order, so pasting one early cannot half-apply the change.
 - **Added** `RELEASE.md` with upgrade steps and the full breaking-change list.
 
 ### 🧭 Upgrade experience
 
-- **Added** Detection for databases that predate this release. Keyper probes for the ownership column on startup and, if it is missing, shows a guided screen instead of a generic failure: what happened, that credentials are safe and nothing was deleted, the ordered steps, a copy button for the migration SQL, and a re-check button.
+- **Added** Detection for databases that predate this release. Keyper probes for the ownership column on startup and, if it is missing, shows a guided screen instead of a generic failure.
+- **Added** The upgrade screen walks through all nine steps with a copy button per script, expected output for each, red call-outs on the points people actually get wrong, and tick-off progress that survives a reload, since the flow moves between Keyper and the Supabase dashboard.
+- **Added** `MIGRATION.md`, a full walkthrough with expected output per step and a troubleshooting section covering every error the scripts can produce.
+- **Added** A matching walkthrough on the docs site with per-script copy buttons, reading the same files at build time so the docs cannot drift from what ships.
+- **Added** Prominent upgrade notices at the top of the README and in its upgrade section.
 - **Added** The probe runs before sign-in, since the old permissive policies still allow it. Telling someone to create an account and then failing afterwards would waste their time.
 - **Added** A pre-flight guard in `supabase-setup.sql` that aborts if the database already contains credentials or a vault config, so nobody destroys a live vault by running the fresh-install script instead of the migration.
 - **Changed** The un-migrated case previously surfaced as "Could not reach your vault", which reads like data loss and invites exactly the wrong reaction.
@@ -68,7 +72,7 @@ for reviewing the shipped setup SQL and reporting this privately.
 ### ⚠️ Breaking Changes
 
 - **Supabase users need to enable the Email auth provider** and create an account. The anon key alone no longer opens a vault.
-- **Existing databases need `migration-auth-rls.sql`.** It runs in stages: claim your rows, apply the new rules, unlock once in the app so Keyper moves your vault key across, then remove the old columns. Take a backup first, and keep the stages in order, since the last one removes the old key.
+- **Existing databases need the scripts in `migration/`.** Run them in order: check, claim your rows, apply the new rules, unlock once in the app so Keyper moves your vault key across, confirm, then remove the old columns. Take a backup first. Only the second script needs an edit.
 - **The master passphrase can no longer be reset.** It can be changed whenever you know the current one, but nothing stored can recover it. Keep a copy somewhere safe.
 - **Switching accounts on Supabase means signing out and back in.** The old in-app user list relied on reading other users' rows. SQLite and Neon keep their username switcher on the unlock screen.
 
