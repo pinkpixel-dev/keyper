@@ -119,6 +119,38 @@ describe('multi-user flow with sqlite provider', () => {
     expect(vaultManager.isUnlocked()).toBe(true);
   });
 
+  it('switches vaults when the lock-screen username changes', async () => {
+    // Mirrors what PassphraseGate does on local providers: set the username,
+    // clear any key held in memory, then unlock. Switching must not carry the
+    // previous user's key over to the new user's rows.
+    switchLocalUser('alice');
+    await vaultManager.createVault('alice-password-123');
+    vaultManager.lockVault();
+
+    switchLocalUser('bob');
+    await vaultManager.createVault('bob-password-456');
+
+    // Bob is open. Switch back to alice and confirm bob's key did not survive.
+    expect(vaultManager.isUnlocked()).toBe(true);
+    switchLocalUser('alice');
+    expect(vaultManager.isUnlocked()).toBe(false);
+
+    // Alice's own passphrase still opens alice's vault.
+    await expect(vaultManager.unlockVault('alice-password-123')).resolves.toBeUndefined();
+    expect(vaultManager.isUnlocked()).toBe(true);
+  });
+
+  it('treats an unknown username as a brand new vault', async () => {
+    switchLocalUser('alice');
+    await vaultManager.createVault('alice-password-123');
+
+    switchLocalUser('someone-new');
+    await expect(vaultManager.isFirstTimeUser()).resolves.toBe(true);
+
+    switchLocalUser('alice');
+    await expect(vaultManager.isFirstTimeUser()).resolves.toBe(false);
+  });
+
   it('stores the key wrapped, never in a directly usable form', async () => {
     switchLocalUser('alice');
     await vaultManager.createVault('alice-password-123');

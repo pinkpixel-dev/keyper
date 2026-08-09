@@ -90,10 +90,10 @@ Scroll down to see other installation options.
 - 🌐 **Secure Connections** - HTTPS/TLS encryption
 - 🏠 **Self-Hosted** - Complete control over your data
 
-> **What is not encrypted:** only the secret itself (`secret_blob`) is encrypted.
-> Titles, usernames, URLs, notes, tags and categories are stored as plaintext, so
-> anyone who can read your rows learns which services you use. Treat account
-> access as vault access. See [Security model](#security-model) for the details.
+> **Good to know:** encryption covers the secret values themselves. Titles,
+> usernames, URLs, notes, tags and categories are stored as regular text so
+> Keyper can search and sort them. See [Security model](#security-model) for what
+> each layer covers.
 
 ### 🔐 **Advanced Encryption Features**
 
@@ -259,40 +259,60 @@ Installers are output to `dist-electron/`.
 
 ---
 
-## ⚠️ Upgrading to 1.3.0 from an earlier version
+## 🔄 Upgrading to 1.3.0
 
-**Read this before you update if you already have a Keyper vault on Supabase.**
+If you already use Keyper with Supabase, 1.3.0 needs a one-time database update
+before it will run. It takes a few minutes. Keyper walks you through it in the
+app, and this is the same thing written down.
 
-1.3.0 fixes a security hole: Row Level Security was enabled but every policy was
-written as `USING (true)` with no `TO` clause, so it applied to everyone
-including the anonymous role. Anyone with a deployed instance's public anon key
-could read, change and delete every row, including the key that decrypts the
-vault. Details in [RELEASE.md](RELEASE.md).
+### What changed
 
-Because the fix changes the schema, **the app will not work against an
-un-migrated database.** Keyper detects this on startup and shows you what to do,
-but here is the short version:
+Keyper now signs you in to an account before opening your vault, and stores your
+vault key in a stronger form.
+
+- **You sign in with an email and password.** Previously Keyper identified you by
+  a username you typed. Now it uses a real account, and the database checks it.
+- **Each account only sees its own data,** enforced by the database rather than
+  by the app filtering results.
+- **Your vault key is now stored encrypted under your master passphrase.** It used
+  to be stored in a form the server could read directly. This means a copy of the
+  database is no longer enough to decrypt anything.
+
+Your credentials themselves are unchanged and are not re-encrypted.
+
+### Steps
 
 1. **Back up your database.** Supabase → Database → Backups.
-2. **Enable Email auth.** Supabase → Authentication → Providers → Email.
-3. **Create your account.** Authentication → Users → Add user. Copy its UUID.
-4. **Run `migration-auth-rls.sql`**, following its stages in order. Paste your
-   UUID into Stage 1c. Stop after Stage 1.
-5. **Sign in and unlock once** with your existing master passphrase. Keyper
-   re-wraps your vault key automatically; nothing is re-encrypted.
-6. **Then run Stage 3** to drop the old key columns.
+2. **Enable Email sign-in.** Supabase → Authentication → Providers → Email.
+3. **Create your account.** Authentication → Users → Add user. Copy the account's
+   UUID from the users list.
+4. **Run `migration-auth-rls.sql`** in the SQL editor, following its stages in
+   order. Paste your UUID into the Stage 1c section. Stop when Stage 1 is done.
+5. **Update Keyper, sign in, and unlock** with your existing master passphrase.
+   Keyper moves your vault key to the new format automatically. This is quick,
+   since nothing is re-encrypted.
+6. **Run Stage 3** to remove the old key columns.
 
-> **Do not run `supabase-setup.sql` to upgrade.** It is for fresh installs and
-> now refuses to run on a database that already holds data.
+> **Use `migration-auth-rls.sql`, not `supabase-setup.sql`.** The setup script is
+> for new installs, and now stops on its own if it finds existing data.
 >
-> **Running Stage 3 before step 5 permanently destroys your vault.** There is no
-> recovery. Do the steps in order.
+> **Do steps 5 and 6 in that order.** Stage 3 removes the old key, so running it
+> before Keyper has moved the key across leaves the vault unreadable.
 
-Two things change for you afterwards: you sign in with an account before
-entering your passphrase, and **the master passphrase can no longer be reset**.
-You can change it if you know it. If you forget it, the data is gone. Write it
-down.
+### Two things to know afterwards
 
+- **You sign in first, then enter your master passphrase.** Two separate secrets:
+  the account password gets you your data, the passphrase decrypts it.
+- **The master passphrase can no longer be reset.** You can change it whenever you
+  like as long as you know the current one, but there is no longer a stored value
+  that could recover it for you. Keep a copy somewhere safe.
+
+If you ran Keyper on a publicly reachable URL, note that under the old rules the
+public anon key allowed access to vault rows. Once you have migrated, it is worth
+updating any credentials you stored during that time. If you only ever ran Keyper
+locally, there is nothing extra to do.
+
+Full detail is in [RELEASE.md](RELEASE.md) and [CHANGELOG.md](CHANGELOG.md).
 ---
 
 ## 🗄️ Database Setup
@@ -545,20 +565,22 @@ over. Write your passphrase down and put it somewhere safe.
 
 ### Security model
 
-Worth being precise about what each layer does, because they are easy to conflate:
+Keyper protects your data in layers. They are easy to mix up, so here is what
+each one actually does:
 
-| Layer | Protects against | Does not protect against |
-|---|---|---|
-| Supabase Auth session | Anyone with just the anon key reading your rows | Someone who has your account password |
-| RLS owner-scoped policies | Another signed-in user reading or deleting your rows | Your own account being compromised |
-| Passphrase-wrapped vault key | Database dumps, leaked service-role keys, backups | Someone who has your master passphrase |
-| AES-256-GCM on `secret_blob` | Reading your actual secrets | Reading your metadata, which is plaintext |
+| Layer | What it covers |
+|---|---|
+| Supabase Auth session | Decides whether the database returns your rows at all |
+| Owner-scoped RLS policies | Keeps each account to its own rows, checked by the database |
+| Passphrase-wrapped vault key | Means a copy of the database cannot decrypt anything on its own |
+| AES-256-GCM on `secret_blob` | Encrypts the secret values themselves |
 
-**Known limitations**, stated plainly:
+**Scope, so you know what you are working with:**
 
-- Only `secret_blob` is encrypted. `title`, `username`, `url`, `notes`, `tags`, `category` and `priority` are plaintext. An attacker with row access learns your credential inventory even if they cannot decrypt a single secret.
-- **Neon mode puts a full Postgres connection string in the browser.** That is a complete database credential, and RLS cannot constrain it because the role owns the tables. Use Neon mode only as a single operator with a private connection string. For real multi-user separation use Supabase; for a private local vault use SQLite.
-- The anon key is not a secret and never was. It is safe to expose, and on its own it now reads nothing.
+- Encryption covers the secret values. `title`, `username`, `url`, `notes`, `tags`, `category` and `priority` are stored as regular text, which is what makes search and sorting work. Encrypting them is on the roadmap.
+- Your master passphrase is the only thing that unlocks the vault key, and it is never sent anywhere. That also means nobody can recover it for you, so keep a copy somewhere safe.
+- The anon/publishable key is designed to be public and is safe to expose. On its own it does not open anything.
+- **Neon mode works differently.** It connects to Postgres directly from the browser using a connection string, which carries full database access, so database-side rules cannot narrow it down. It suits a single operator who keeps that string private. For separate accounts use Supabase; for a private local vault use SQLite.
 
 ---
 

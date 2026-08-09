@@ -17,19 +17,39 @@ description: Step-by-step application behavior from load to credential operation
 4. For **Neon**: the connection string and Cloud/Local mode are tested through the Neon serverless driver, then persisted to local storage.
 5. For **SQLite**: no credentials are needed; the sql.js engine initialises the schema automatically on first open.
 
+## Sign-in flow (Supabase)
+
+1. `AuthGate` checks the database schema first. An older schema routes to the
+   upgrade screen instead of the sign-in form.
+2. With a current schema, `AuthGate` subscribes to Supabase auth state and shows
+   `SignInForm` or `UserRegistration` until a session exists.
+3. `signUp` creates a Supabase Auth account. The master passphrase is set
+   separately, on the next screen.
+4. Sign-out clears the vault key from memory.
+
+SQLite and Neon skip this entirely; there is no server-side account to check.
+
 ## Vault flow
 
-1. `PassphraseGate` loads the active username context and checks whether that user has `vault_config`.
-2. Existing user path: verifies passphrase via bcrypt for new format or unwraps legacy DEK.
-3. New user path: **Create New User** opens `UserRegistration`, validates uniqueness, and calls `registerNewUser(...)`.
-4. Registration creates an isolated vault (`raw_dek` + `bcrypt_hash`) and default categories for that username.
+1. `PassphraseGate` loads the vault for the current owner: the signed-in account
+   on Supabase, or the username typed on the unlock screen for SQLite and Neon.
+2. Existing vault: the passphrase derives a KEK which unwraps the stored DEK.
+   A wrong passphrase fails AES-GCM authentication, which is the check.
+3. New vault: `createVault(...)` generates a DEK, wraps it under the passphrase,
+   stores the wrapped form, and seeds default categories.
+4. Pre-1.3.0 vault: the legacy `raw_dek` is wrapped under the passphrase and the
+   old column cleared, on first unlock. Nothing is re-encrypted.
 5. On unlock, dashboard interactions can encrypt/decrypt secrets.
 
-## User switching flow
+## Account switching flow
 
-1. `DashboardSettings` -> `User Management` lists registered usernames from `vault_config`.
-2. `UserSwitcher` updates active username context and forces a clean reload/lock transition.
-3. Target user must still unlock with that user&apos;s passphrase before secrets are readable.
+On **Supabase**, sign out and sign in as the other account. `UserSwitcher` shows
+the current account and handles sign-out. There is no cross-account list, since
+building one would require reading rows the policies correctly withhold.
+
+On **SQLite** and **Neon**, change the username on the unlock screen. Switching
+clears any key held in memory, and the target vault still needs its own
+passphrase before anything is readable.
 
 ## Credential flow
 

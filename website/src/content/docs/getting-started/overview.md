@@ -18,7 +18,7 @@ _Keyper v1.2.1 dashboard showing a populated vault with saved credentials, categ
 
 - Keep secrets under user control through self-hosted data storage.
 - Encrypt sensitive credential values before they reach the database.
-- Support multiple users on the same instance through self-service registration and `user_id` segmentation.
+- Support multiple users on the same instance through self-service sign-up, with separation enforced by the database against the signed-in account.
 - Provide a modern PWA experience with installability and fast startup.
 - Support both structured and flexible secure payloads, including encrypted document credentials and multiline misc secrets.
 
@@ -28,7 +28,7 @@ _Keyper v1.2.1 dashboard showing a populated vault with saved credentials, categ
 - UI shell: single-route app (`/`) with lazy-loaded dashboard modules.
 - Appearance: the docs screenshots show the default dark and light themes, but Dashboard Settings also includes Charcoal, Medium Gray, Light Gray, Warm Light, Blue, Midnight Blue, and Deep Purple themes plus five local font choices; see [Appearance Settings](/getting-started/appearance-settings/).
 - Data backend: **Supabase (Postgres)**, **Neon Postgres**, or **SQLite (sql.js / IndexedDB)** — selectable at runtime via in-app settings.
-- Security gate: passphrase-based vault unlock before secret operations, with a built-in **Create New User** registration path.
+- Security gates: account sign-in decides whether the database returns your rows, then master-passphrase unlock decrypts them. Sign-up is built in.
 
 ## Primary modules
 

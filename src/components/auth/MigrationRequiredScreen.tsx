@@ -32,24 +32,24 @@ interface MigrationRequiredScreenProps {
 
 const STEPS = [
   {
-    title: 'Back up your database first',
-    body: 'Supabase dashboard → Database → Backups. This migration is staged and reversible up until the very last step, but take the backup anyway.',
+    title: 'Back up your database',
+    body: 'Supabase dashboard → Database → Backups. Good practice before any schema change.',
   },
   {
     title: 'Turn on email sign-in',
-    body: 'Authentication → Providers → enable Email. Keyper needs real accounts now; the anon key on its own no longer opens anything.',
+    body: 'Authentication → Providers → enable Email. Keyper signs you in to an account now, so this needs to be on before you can continue.',
   },
   {
     title: 'Create your account',
-    body: 'Authentication → Users → Add user. Use a real email and a strong password. Then copy the account UUID from the users list.',
+    body: 'Authentication → Users → Add user. Use a real email and a strong password, then copy the account UUID from the users list.',
   },
   {
     title: 'Run the migration',
-    body: 'Paste the script into the SQL editor. Read it as you go: you need to paste your UUID into the Stage 1c section, and Stage 3 is commented out on purpose. Do not uncomment it yet.',
+    body: 'Paste the script into the SQL editor and work through it in order. You will need to paste your UUID into the Stage 1c section. Stage 3 is commented out on purpose, so leave it for now.',
   },
   {
     title: 'Come back and sign in',
-    body: 'Use Re-check below, sign in, then unlock with your existing master passphrase. Keyper re-locks your vault key under that passphrase automatically. Only after that should you run Stage 3.',
+    body: 'Use Re-check below, sign in, then unlock with your existing master passphrase. Keyper moves your vault key to the new format automatically. Run Stage 3 once that is done.',
   },
 ];
 
@@ -110,13 +110,13 @@ export default function MigrationRequiredScreen({ onRecheck }: MigrationRequired
             </AlertDescription>
           </Alert>
 
-          <Alert variant="destructive">
+          <Alert>
             <TriangleAlert className="h-4 w-4" aria-hidden="true" />
             <AlertDescription>
-              Do <strong>not</strong> run <code>supabase-setup.sql</code> to fix
-              this. That script is for fresh installs. Run{' '}
-              <code>migration-auth-rls.sql</code>, and work through it in order
-              rather than pasting the whole thing at once.
+              Use <code>migration-auth-rls.sql</code>, not{' '}
+              <code>supabase-setup.sql</code>. The setup script is for new
+              installs. Work through the migration in order rather than pasting
+              it all at once, since the last stage removes the old vault key.
             </AlertDescription>
           </Alert>
 
@@ -197,16 +197,16 @@ export default function MigrationRequiredScreen({ onRecheck }: MigrationRequired
             </summary>
             <div className="pt-2 space-y-2 text-muted-foreground">
               <p>
-                Older versions enabled Row Level Security but wrote every policy as{' '}
-                <code>USING (true)</code>, which applies to everyone including
-                unauthenticated visitors. On a deployed instance that meant anyone
-                with the public anon key could read your rows, including the key
-                that decrypts your vault.
+                Keyper used to identify you by a username typed into the app, and
+                the database rules that came with it applied broadly rather than to
+                the signed-in owner. That meant the database was not enforcing the
+                separation the app assumed.
               </p>
               <p>
-                This release scopes every policy to the signed-in owner and stores
-                the vault key only in a form your master passphrase can unlock. The
-                migration is what moves your existing data onto that model.
+                Now you sign in to a real account, the database checks it on every
+                request, and your vault key is stored encrypted under your master
+                passphrase. This migration adds the ownership column and swaps the
+                rules over so your existing data works with all of that.
               </p>
             </div>
           </details>

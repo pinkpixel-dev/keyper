@@ -16,7 +16,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/comp
 import { Progress} from '@/components/ui/progress';
 import { Badge} from '@/components/ui/badge';
 import { Alert, AlertDescription} from '@/components/ui/alert';
-import { getDisplayName} from '@/integrations/supabase/auth';
+import { getDisplayName, isAuthRequired} from '@/integrations/supabase/auth';
+import { getCurrentUsername, saveCurrentUsername} from '@/integrations/supabase/client';
 import {
  Lock,
  Unlock,
@@ -54,8 +55,17 @@ export default function PassphraseGate({
  showMetrics = false,
  className =""
 }: PassphraseGateProps) {
+ // Local providers (SQLite, Neon) have no session, so the vault is chosen by a
+ // local username typed right here. On Supabase this field stays hidden: the
+ // account is the identity, and a username box would wrongly imply you can
+ // reach a different vault just by typing a different name.
+ const localMode = !isAuthRequired();
+
  const [isUnlocked, setIsUnlocked] = useState(vaultManager.isUnlocked());
  const [accountName, setAccountName] = useState('');
+ const [localUsername, setLocalUsername] = useState(() =>
+ localMode ? getCurrentUsername() : '',
+ );
  const [passphrase, setPassphrase] = useState('');
  const [showPassphrase, setShowPassphrase] = useState(false);
  const [error, setError] = useState<string | null>(null);
@@ -107,10 +117,18 @@ useEffect(() => {
  void getDisplayName().then(setAccountName);
 }, []);
 
- // Does this account already have a vault?
+ // Does this vault already exist? On local providers this depends on the
+ // username being typed, so it is re-checked as that changes, debounced so we
+ // are not querying on every keystroke.
  useEffect(() => {
+ const trimmed = localUsername.trim();
+
  const checkFirstTimeUser = async () => {
  try {
+ if (localMode && trimmed && trimmed !== getCurrentUsername()) {
+ saveCurrentUsername(trimmed);
+ vaultManager.clearSession();
+}
  setIsFirstTime(await vaultManager.isFirstTimeUser());
 } catch (error: unknown) {
  console.error('Error checking first-time user status:', error);
@@ -122,8 +140,9 @@ useEffect(() => {
 }
 };
 
- void checkFirstTimeUser();
-}, []);
+ const timer = setTimeout(() => void checkFirstTimeUser(), localMode ? 350 : 0);
+ return () => clearTimeout(timer);
+}, [localMode, localUsername]);
 
  // Setup vault event listener and auto-lock
  useEffect(() => {
@@ -160,6 +179,12 @@ useEffect(() => {
  const handleSubmit = async (e: React.FormEvent) => {
  e.preventDefault();
 
+ const trimmedUsername = localUsername.trim();
+ if (localMode && !trimmedUsername) {
+ setError("Enter a username to choose which vault to open");
+ return;
+}
+
  const trimmedPassphrase = passphrase.trim();
  if (!trimmedPassphrase || trimmedPassphrase.length < 8) {
  setError("Passphrase must be at least 8 characters long");
@@ -170,7 +195,16 @@ useEffect(() => {
  setError(null);
 
  try {
- // Identity comes from the signed-in session now, not a typed-in username.
+ // On local providers the typed username selects the vault, so switch
+ // context before doing anything else. clearSession() drops any key still
+ // held in memory, otherwise switching users could leave the previous
+ // vault's key loaded against the new user's rows.
+ if (localMode && trimmedUsername !== getCurrentUsername()) {
+ saveCurrentUsername(trimmedUsername);
+ vaultManager.clearSession();
+}
+
+ // On Supabase, identity comes from the signed-in session instead.
  const firstTime = await vaultManager.isFirstTimeUser();
 
  if (firstTime) {
@@ -281,7 +315,9 @@ useEffect(() => {
  : 'Enter your passphrase to unlock your secure credential vault'
 }
  </CardDescription>
- {accountName && (
+ {/* Only meaningful on Supabase. In local mode the username field
+ below already shows which vault is being opened. */}
+ {!localMode && accountName && (
  <p className="text-xs text-muted-foreground pt-1">
  Signed in as <span className="font-medium text-foreground">{accountName}</span>
  </p>
@@ -291,6 +327,26 @@ useEffect(() => {
  <CardContent className="space-y-4">
  <form onSubmit={handleSubmit} className="space-y-4">
  <div className="space-y-4">
+ {/* Username field, local providers only. On Supabase the account
+ already decides which vault this is. */}
+ {localMode && (
+ <div className="space-y-2">
+ <Label htmlFor="local-username">Username</Label>
+ <Input
+ id="local-username"
+ type="text"
+ autoComplete="username"
+ placeholder="e.g. jess (leave as-is for the default vault)"
+ value={localUsername}
+ onChange={(e) => setLocalUsername(e.target.value)}
+ disabled={isUnlocking}
+ />
+ <p className="text-xs text-muted-foreground">
+ Each username has its own vault and its own passphrase. Change it here to switch.
+ </p>
+ </div>
+ )}
+
  {/* Passphrase field */}
  <div className="space-y-2">
  <Label htmlFor="passphrase">Master Passphrase</Label>
@@ -387,8 +443,8 @@ useEffect(() => {
  <Alert>
  <Info className="h-4 w-4" />
  <AlertDescription className="text-sm">
- This passphrase is what encrypts your credentials, and it is never sent anywhere.
- Nobody can reset it for you, so if you lose it the vault cannot be recovered.
+ This passphrase encrypts your credentials and never leaves your device.
+ Keep a copy somewhere safe, since it is the only thing that unlocks your vault.
  </AlertDescription>
  </Alert>
 

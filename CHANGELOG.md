@@ -7,24 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.3.0] - 2026-08-09 - 🔐 **Authenticated Row Access & Passphrase-Wrapped Vault Key**
+## [1.3.0] - 2026-08-09 - 🔐 **Accounts, Owner-Scoped Database Rules & Wrapped Vault Key**
 
-This release closes a real vulnerability. If you run a deployed Keyper instance,
-read the migration notes below before upgrading, and take a database backup.
+Keyper now signs you in to a real account before opening your vault, and stores
+the vault key encrypted under your master passphrase. Existing installs need a
+one-time database update; see the upgrade notes below and back up first.
 
-Reported privately by **Cenk Kurtoglu** ([github.com/cekuu35](https://github.com/cekuu35)),
-who found it by reading the public setup SQL and emailed rather than opening an
-issue. He asked for no credit; he gets it anyway.
+Thanks to **Cenk Kurtoglu** ([github.com/cekuu35](https://github.com/cekuu35))
+for reviewing the shipped setup SQL and reporting this privately.
 
-### 🚨 Security
+### 🔐 Security
 
-- **Fixed** Row Level Security policies were enabled but enforced nothing. All twelve policies were written as `USING (true)` with no `TO` clause, which applies to `PUBLIC` and therefore includes `anon`. Anyone holding the anon key of a deployed instance could read, overwrite and delete every row in `credentials`, `vault_config` and `categories`. Policies are now scoped `TO authenticated` with `owner_id = (SELECT auth.uid())`.
-- **Fixed** `vault_config.raw_dek` stored the data encryption key in directly usable form, next to the ciphertext it protects and reachable through the same unrestricted path. The key is now stored only wrapped under an Argon2id key derived from the master passphrase, so a full database dump decrypts nothing.
-- **Fixed** The bcrypt-based passphrase reset was a hole through the encryption rather than a feature beside it: overwriting `bcrypt_hash` granted access precisely because `raw_dek` was stored independently of the passphrase. Both columns are gone, and passphrase recovery is now genuinely impossible.
-- **Fixed** `get_credential_stats()` was `SECURITY DEFINER` while reading the `credentials` table, bypassing RLS entirely and returning another user's statistics to any caller. It is now `SECURITY INVOKER` and owner-scoped.
-- **Fixed** Multi-user isolation was client-side filtering on a `user_id` string held in `localStorage`, while the README advertised database-level per-user isolation. Isolation is now enforced by the database.
-- **Fixed** The setup SQL shown in Settings was a second copy of `supabase-setup.sql` pasted into the component. It had drifted, so users copying from the app installed the old wide-open policies. Settings now reads the shipped file directly at build time.
-- **Added** `REVOKE ALL ... FROM anon` on all three tables, so anon is refused at the grant layer as well as by RLS.
+- **Fixed** The Row Level Security policies were more permissive than intended. All twelve were written as `USING (true)` with no `TO` clause, so they applied to `PUBLIC` rather than to the signed-in owner, and the anon role was included. The database was therefore not enforcing the separation the app assumed. Policies are now scoped `TO authenticated` with `owner_id = (SELECT auth.uid())`.
+- **Changed** `vault_config.raw_dek` stored the data encryption key in a form the server could use directly. The key is now stored only wrapped under an Argon2id key derived from the master passphrase, so a copy of the database cannot decrypt anything on its own.
+- **Changed** The bcrypt passphrase reset depended on the key being stored separately from the passphrase, so it no longer applies. Both `raw_dek` and `bcrypt_hash` are removed, and the passphrase is no longer recoverable.
+- **Fixed** `get_credential_stats()` ran as `SECURITY DEFINER` while reading the `credentials` table, which meant it did not inherit the caller's row rules. It is now `SECURITY INVOKER` and owner-scoped.
+- **Changed** Per-user separation was previously applied by the app filtering on a `user_id` string from `localStorage`. It is now enforced by the database.
+- **Fixed** The setup SQL shown in Settings was a second copy of `supabase-setup.sql` that had drifted out of date, so pasting it from the app installed the older rules. Settings now reads the shipped file directly at build time.
+- **Added** `REVOKE ALL ... FROM anon` on all three tables, so the anon role holds no table privileges at all.
 
 ### 🔐 Authentication
 
@@ -67,10 +67,10 @@ issue. He asked for no credit; he gets it anyway.
 
 ### ⚠️ Breaking Changes
 
-- **Supabase users must enable the Email auth provider** and create an account. The anon key alone no longer works.
-- **Existing deployments must run `migration-auth-rls.sql`.** It is staged deliberately: claim your rows, apply the new policies, unlock once in the app so Keyper re-wraps your key, and only then drop `raw_dek`. Dropping it early destroys your vault permanently.
-- **The master passphrase can no longer be reset.** It can be changed if you know the current one. If you forget it, the vault is unrecoverable. Write it down.
-- **The in-app account switcher is gone.** Sign out and sign in as the other account.
+- **Supabase users need to enable the Email auth provider** and create an account. The anon key alone no longer opens a vault.
+- **Existing databases need `migration-auth-rls.sql`.** It runs in stages: claim your rows, apply the new rules, unlock once in the app so Keyper moves your vault key across, then remove the old columns. Take a backup first, and keep the stages in order, since the last one removes the old key.
+- **The master passphrase can no longer be reset.** It can be changed whenever you know the current one, but nothing stored can recover it. Keep a copy somewhere safe.
+- **Switching accounts on Supabase means signing out and back in.** The old in-app user list relied on reading other users' rows. SQLite and Neon keep their username switcher on the unlock screen.
 
 ## [1.2.2] - 2026-08-08 - 🔒 **Dependency Security**
 
