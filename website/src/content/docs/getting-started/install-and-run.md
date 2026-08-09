@@ -11,7 +11,7 @@ Current published installer links are available for Windows and Linux.
 
 | Platform              | Package              | Download                                                                                             |
 | --------------------- | -------------------- | ---------------------------------------------------------------------------------------------------- |
-| Windows               | NSIS installer       | [Keyper.Setup.v1.2.2-win-x64.exe](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper.Setup.v1.2.2-win-x64.exe) |
+| Windows               | NSIS installer       | [Keyper.Setup.v1.2.2-win-x64.exe](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper%20Setup%20v1.2.2-win-x64.exe) |
 | Linux                 | AppImage (ARM64)     | [Keyper-1.2.2-arm64.AppImage](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper-1.2.2-arm64.AppImage)   |
 | Linux                 | AppImage (AMD64)     | [Keyper-1.2.2-x86_64.AppImage](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper-1.2.2-x86_64.AppImage)   |
 | Linux (Debian/Ubuntu) | `.deb` (x86_64)      | [keyper_1.2.2_amd64.deb](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/keyper_1.2.2_amd64.deb) |
