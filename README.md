@@ -17,7 +17,7 @@
 [![Electron](https://img.shields.io/badge/Electron-v33-47848F?style=for-the-badge&logo=electron)](https://www.electronjs.org/)
 [![PWA](https://img.shields.io/badge/PWA-Enabled-5A0FC8?style=for-the-badge)](https://web.dev/progressive-web-apps/)
 
-_A modern, secure, self-hosted credential management application for storing and organizing your digital credentials with complete privacy and control._
+_A secure, self-hosted credential management application for storing and organizing your digital credentials with complete privacy and control._
 
 ![Keyper Screenshot](./screenshots/screenshot-dashboard.png)
 ![Keyper Screenshot Light Mode](./screenshots/screenshot-dashboard-light.png)
