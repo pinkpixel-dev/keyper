@@ -74,6 +74,15 @@ that does not yet have an owner, which is what you want on a single-user install
 If several people share the database, set `only_username` to one legacy username
 and run the block once per person, then continue.
 
+:::note[More than one username?]
+Each username has its own vault with its own encryption key, so their
+credentials cannot be merged into a single account. If the migration finds more
+than one vault, it stops and explains the options: create one account per
+username and run Stage 1c once for each, or pick the one you want to keep. Every
+username still has to end up owned by some account before the migration will
+continue.
+:::
+
 The script checks your UUID before changing anything, so an unedited or wrong
 value stops with a clear message rather than a constraint error.
 

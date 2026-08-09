@@ -128,6 +128,31 @@ BEGIN
       'Nothing has been changed.\n', target_owner;
   END IF;
 
+  -- One account can only hold one vault. Each legacy username has its own
+  -- vault_config with its own encryption key, and credentials under each are
+  -- encrypted with a different key, so two vaults cannot be merged into one
+  -- account. Catch that here rather than letting the unique index fail later.
+  SELECT COUNT(*) INTO n_vault
+  FROM vault_config
+  WHERE owner_id = target_owner
+     OR (owner_id IS NULL AND (only_username IS NULL OR user_id = only_username));
+
+  IF n_vault > 1 THEN
+    RAISE EXCEPTION
+      E'\n\nThis database holds % separate vaults, and one account can only\n'
+      'hold one of them.\n\n'
+      'Each legacy username has its own encryption key, so their credentials\n'
+      'cannot be merged into a single account.\n\n'
+      'See which usernames have a vault:\n'
+      '    SELECT user_id, created_at FROM vault_config ORDER BY created_at;\n\n'
+      'Then either:\n'
+      '  a) create one Supabase account per username, and run this block once\n'
+      '     per person with only_username set to that username; or\n'
+      '  b) if you only want one of them, set only_username to that username\n'
+      '     and deal with the others separately.\n\n'
+      'Nothing has been changed.\n', n_vault;
+  END IF;
+
   UPDATE credentials SET owner_id = target_owner
    WHERE owner_id IS NULL
      AND (only_username IS NULL OR user_id = only_username);
@@ -161,12 +186,15 @@ SELECT 'vault_config' AS table_name, user_id, COUNT(*) AS unclaimed FROM vault_c
 UNION ALL
 SELECT 'categories'   AS table_name, user_id, COUNT(*) AS unclaimed FROM categories   WHERE owner_id IS NULL GROUP BY 1,2;
 
--- Same check, enforced. This stops here with a readable message rather than
--- letting the SET NOT NULL below fail with "contains null values".
--- The guard and the policy swap live in ONE block on purpose. A bare guard is
--- not enough: psql and some SQL consoles carry on to the next statement after an
--- error, which would apply the policies anyway. Inside a single block, a failed
--- check means none of the statements below it run.
+-- ============================================================================
+-- STAGE 1e: LOCK DOWN THE COLUMNS AND REPLACE THE POLICIES
+-- ============================================================================
+--
+-- Everything from here runs inside ONE block on purpose. A bare guard is not
+-- enough: psql and the Supabase SQL editor carry on to the next statement after
+-- an error, which would apply half of this anyway. Inside a single block, a
+-- failed check means none of the statements below it run, and your existing
+-- setup keeps working untouched.
 
 DO $$
 DECLARE
@@ -185,6 +213,27 @@ BEGIN
       'invisible to the app even though it is still on disk. Nothing has been\n'
       'changed.\n\n'
       'Re-run Stage 1c with only_username left as NULL to claim everything.\n', unclaimed;
+  END IF;
+
+  -- Every row has an owner, so the columns can be tightened.
+  FOREACH tbl IN ARRAY ARRAY['credentials', 'vault_config', 'categories'] LOOP
+    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN owner_id SET NOT NULL', tbl);
+    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN owner_id SET DEFAULT auth.uid()', tbl);
+    EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON public.%I(owner_id)',
+                   'idx_' || tbl || '_owner_id', tbl);
+  END LOOP;
+
+  -- One vault per account, and category names unique per account, replacing the
+  -- old per-username constraints. Guarded so the file stays safe to re-run.
+  ALTER TABLE vault_config DROP CONSTRAINT IF EXISTS vault_config_user_id_key;
+  ALTER TABLE categories   DROP CONSTRAINT IF EXISTS categories_user_id_name_key;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'vault_config_owner_id_key') THEN
+    ALTER TABLE vault_config ADD CONSTRAINT vault_config_owner_id_key UNIQUE (owner_id);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'categories_owner_id_name_key') THEN
+    ALTER TABLE categories ADD CONSTRAINT categories_owner_id_name_key UNIQUE (owner_id, name);
   END IF;
 
   FOREACH tbl IN ARRAY ARRAY['credentials', 'vault_config', 'categories'] LOOP
@@ -224,11 +273,8 @@ BEGIN
   EXECUTE 'REVOKE ALL ON credentials, vault_config, categories FROM anon';
   EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON credentials, vault_config, categories TO authenticated';
 
-  RAISE NOTICE 'Policies replaced and anon privileges revoked on all three tables.';
+  RAISE NOTICE 'Columns locked down, policies replaced, anon privileges revoked.';
 END $$;
-
--- Strip anon at the grant layer too, so a future policy mistake cannot quietly
--- reopen the table.
 
 -- get_credential_stats read the credentials table as SECURITY DEFINER, which
 -- bypassed RLS entirely and returned another user's numbers to any caller.
