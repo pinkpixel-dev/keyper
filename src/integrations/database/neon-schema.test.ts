@@ -14,8 +14,8 @@ function readSql(file: string): string {
   return readFileSync(file, 'utf8');
 }
 
-const neonSql = readSql('neon-setup.sql');
-const supabaseSql = readSql('supabase-setup.sql');
+const neonSql = readSql('sql/neon-setup.sql');
+const supabaseSql = readSql('sql/supabase-setup.sql');
 const migrationSql = ['02-claim-your-data.sql', '05-remove-old-key.sql']
   .map((f) => readSql(`migration/${f}`))
   .join('\n');

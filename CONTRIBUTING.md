@@ -83,7 +83,7 @@ npm start           # Start CLI server
    VITE_SUPABASE_URL=your_supabase_url
    VITE_SUPABASE_ANON_KEY=your_supabase_key
    ```
-2. Set up your Supabase test database using `supabase-setup.sql`
+2. Set up your Supabase test database using `sql/supabase-setup.sql`
 
 ---
 

@@ -78,6 +78,6 @@ Behaviour is verified against a real Postgres with `npm run test:rls`.
 
 ## Source of truth
 
-See `supabase-setup.sql` and `neon-setup.sql` for canonical Postgres schema definitions shipped with current releases.
+See `sql/supabase-setup.sql` and `sql/neon-setup.sql` for canonical Postgres schema definitions shipped with current releases.
 
 For existing deployments, apply `migration-add-document-misc-types.sql` to upgrade the `credential_type` CHECK constraint without recreating tables or losing data.

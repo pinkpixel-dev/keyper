@@ -19,7 +19,7 @@ This page is a practical index of where behavior lives in the repository today.
 - `src/integrations/database/neon-client.ts`: Neon serverless query adapter for the Supabase-style compatibility surface.
 - `src/components/Settings.tsx`: Supabase, Neon, and SQLite configuration forms, validation, and connection test UX.
 - `src/components/dashboard/DashboardSettings.tsx`: user management UI, appearance theme selector, SQL scripts, and reset/system tools.
-- `supabase-setup.sql`, `neon-setup.sql`: Postgres schemas, policies, triggers, helper functions.
+- `sql/supabase-setup.sql`, `sql/neon-setup.sql`: Postgres schemas, policies, triggers, helper functions.
 
 ## Vault and cryptography
 

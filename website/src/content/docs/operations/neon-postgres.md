@@ -12,7 +12,7 @@ Keyper can use Neon Postgres through the official Neon serverless driver. Neon i
 3. In Keyper, choose **Neon Postgres** as the database provider.
 4. Set **Neon Mode** to **Neon Cloud**.
 5. Paste the connection string.
-6. Copy and run `neon-setup.sql` in the Neon SQL Editor.
+6. Copy and run `sql/neon-setup.sql` in the Neon SQL Editor.
 7. Return to Keyper, test the connection, save, and continue into the vault.
 
 ## Neon Local Docker
@@ -30,7 +30,7 @@ In Keyper:
 1. Choose **Neon Postgres**.
 2. Set **Neon Mode** to **Neon Local Docker**.
 3. Paste the Neon Local connection string.
-4. Run `neon-setup.sql` against the Neon Local database.
+4. Run `sql/neon-setup.sql` against the Neon Local database.
 5. Test and save.
 
 Keyper derives the Neon serverless local HTTP endpoint from the host and port in the connection string.

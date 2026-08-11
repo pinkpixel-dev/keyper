@@ -16,7 +16,7 @@ the difference.
 1. **Run the five scripts one at a time, in order.** Do not paste them all in
    together. Do not skip ahead.
 2. **Back up your database first.** Supabase → Database → Backups.
-3. **Do not run `supabase-setup.sql`.** That one is for brand new installs.
+3. **Do not run `sql/supabase-setup.sql`.** That one is for brand new installs.
 
 Every script checks its own preconditions before it changes anything. Run one out
 of order and it stops, tells you which step to go back to, and leaves your
@@ -31,7 +31,7 @@ disaster.
 | **Supabase**, vault created before 1.3.0 | **Yes** |
 | **SQLite** (local) | No |
 | **Neon** | No |
-| Brand new install | No — run `supabase-setup.sql` instead |
+| Brand new install | No — run `sql/supabase-setup.sql` instead |
 
 Keyper detects this for you too. If you open 1.3.0 and see "Your database needs a
 one-time update", you are in the right place.
@@ -299,7 +299,7 @@ encrypted with different keys. See [Sharing a database](#sharing-a-database-with
 Steps 5 and 6 both need to have run. Run `01-check.sql`: "Migration started?"
 should say YES and "Access rules" should say the new rules are active.
 
-#### I ran `supabase-setup.sql` by mistake
+#### I ran `sql/supabase-setup.sql` by mistake
 It stops by itself when it finds existing data, so almost certainly nothing
 happened. Run `01-check.sql` to confirm, then carry on from step 4.
 

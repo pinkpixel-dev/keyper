@@ -13,7 +13,7 @@ read and about five minutes to do. Reading first is what makes the difference.
 > **2. Back up your database first.**
 > Supabase → Database → Backups. Takes ten seconds.
 >
-> **3. Do not run `supabase-setup.sql`.**
+> **3. Do not run `sql/supabase-setup.sql`.**
 > That one is for brand new installs. It will refuse to run on your database, but
 > do not try it.
 
@@ -30,7 +30,7 @@ half-applies.** So if you make a mistake, you have not broken anything.
 | **Supabase** | **Yes**, if your vault existed before 1.3.0 |
 | **SQLite** (local) | No |
 | **Neon** | No |
-| Brand new install | No, run `supabase-setup.sql` instead |
+| Brand new install | No, run `sql/supabase-setup.sql` instead |
 
 Keyper also detects this for you. If you open 1.3.0 and see a screen saying
 "Your database needs a one-time update", you are in the right place.
@@ -343,7 +343,7 @@ Every username needs an owner before `03-apply-security.sql` will run.
 Scripts 2 and 3 both need to have run. Run `01-check.sql`: "Migration started?"
 should say YES, and "Access rules" should say the new rules are active.
 
-### I ran `supabase-setup.sql` by mistake
+### I ran `sql/supabase-setup.sql` by mistake
 
 It stops by itself when it finds existing data, so almost certainly nothing
 happened. Run `01-check.sql` to confirm, then carry on from step 4.

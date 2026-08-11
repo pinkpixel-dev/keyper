@@ -28,8 +28,8 @@ These values are stored in the browser or Electron profile. They do not affect c
 
 > **Note:** SQL scripts are required for Postgres providers (**Supabase** and **Neon**). SQLite schema is created and seeded automatically on first launch.
 
-- Supabase setup script: `supabase-setup.sql`
-- Neon setup script: `neon-setup.sql`
+- Supabase setup script: `sql/supabase-setup.sql`
+- Neon setup script: `sql/neon-setup.sql`
 - Existing DB upgrade script: `migration-add-document-misc-types.sql`
 
 ## Docs site configs

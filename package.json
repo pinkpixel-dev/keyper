@@ -10,8 +10,8 @@
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
-    "supabase-setup.sql",
-    "neon-setup.sql"
+    "sql/supabase-setup.sql",
+    "sql/neon-setup.sql"
   ],
   "keywords": [
     "credential-manager",

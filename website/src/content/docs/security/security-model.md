@@ -121,7 +121,7 @@ Being specific about what is and is not covered:
 ## Verification
 
 The access rules are tested against a real Postgres rather than reviewed by eye.
-`npm run test:rls` applies the shipped `supabase-setup.sql` to a throwaway
+`npm run test:rls` applies the shipped `sql/supabase-setup.sql` to a throwaway
 database and checks the actual behaviour: that an unauthenticated request reads
 nothing, that one account cannot read or delete another's rows, and that an
 unqualified `DELETE` only ever removes the caller's own data.

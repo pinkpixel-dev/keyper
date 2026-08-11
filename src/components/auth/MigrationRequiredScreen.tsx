@@ -257,7 +257,7 @@ export default function MigrationRequiredScreen({ onRecheck }: MigrationRequired
               <ol className="list-decimal space-y-1 pl-4">
                 <li>Run the scripts <strong>one at a time, in order</strong>. Do not paste them all in together.</li>
                 <li><strong>Back up your database first.</strong> Supabase → Database → Backups.</li>
-                <li>Do <strong>not</strong> run <code>supabase-setup.sql</code>. That is for new installs only.</li>
+                <li>Do <strong>not</strong> run <code>sql/supabase-setup.sql</code>. That is for new installs only.</li>
               </ol>
               <p>
                 Every script checks itself before changing anything, so running one

@@ -284,7 +284,7 @@ Installers are output to `dist-electron/`.
 
 1. **Run the five scripts one at a time, in order.** Do not paste them all in together.
 2. **Back up first.** Supabase → Database → Backups.
-3. **Do not run `supabase-setup.sql`.** That is for new installs only.
+3. **Do not run `sql/supabase-setup.sql`.** That is for new installs only.
 
 Every script checks itself before changing anything, so running one out of order
 stops safely and tells you where to go back to. Nothing half-applies.
@@ -414,7 +414,7 @@ Keyper supports three database backends — choose the one that fits your workfl
 2. Select **Neon Postgres** as the database provider.
 3. Choose **Neon Cloud** or **Neon Local Docker**.
 4. Paste the connection string.
-5. Copy and run `neon-setup.sql` in the Neon SQL Editor or any Postgres client connected to Neon.
+5. Copy and run `sql/neon-setup.sql` in the Neon SQL Editor or any Postgres client connected to Neon.
 6. Test the connection, save, and continue into the vault.
 
 ⚠️ **Important:** Neon connection strings include a database role password. Keyper stores the string locally in your browser or Electron profile. Sensitive credential values are still encrypted client-side before they are written to Neon.
@@ -461,7 +461,7 @@ Keyper works as a Progressive Web App for a native app experience!
   - ✅ Custom: `https://supabase.mydomain.com`
 - Use **anon/public** key, not service_role
 - Check that your Supabase project is active
-- For Neon, verify the connection string is copied exactly and that `neon-setup.sql` has completed successfully
+- For Neon, verify the connection string is copied exactly and that `sql/neon-setup.sql` has completed successfully
 - For Neon Local, make sure the Docker container is running and reachable from the browser or Electron app
 
 **❌ "relation 'credentials' does not exist"**

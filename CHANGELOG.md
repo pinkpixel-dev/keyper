@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🧹 Repository
+
 ## [1.3.1] - 2026-08-09 - 🔑 **Cross-Runtime Vault Unlock**
 
 ### 🗄️ Database Settings

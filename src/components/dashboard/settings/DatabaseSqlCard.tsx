@@ -1,7 +1,7 @@
 /**
  * The database setup script, for fresh installs.
  *
- * The SQL is read from the shipped supabase-setup.sql at build time rather than
+ * The SQL is read from the shipped sql/supabase-setup.sql at build time rather than
  * pasted in here. An earlier copy in this app drifted out of date, so people
  * pasting from Settings installed policies that the repo had already fixed.
  *
@@ -19,8 +19,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { getDatabaseProvider } from '@/integrations/supabase/client';
 import { APP_LINKS } from '@/lib/app-info';
-import setupSqlScript from '/supabase-setup.sql?raw';
-import neonSetupSqlScript from '/neon-setup.sql?raw';
+import setupSqlScript from '/sql/supabase-setup.sql?raw';
+import neonSetupSqlScript from '/sql/neon-setup.sql?raw';
 import { AlertTriangle, Check, ClipboardCopy, Database, ExternalLink } from 'lucide-react';
 
 export default function DatabaseSqlCard() {
@@ -42,7 +42,7 @@ export default function DatabaseSqlCard() {
     } catch {
       toast({
         title: 'Could not copy',
-        description: `Open ${fileName} in the Keyper repo instead.`,
+        description: `Open sql/${fileName} in the Keyper repo instead.`,
         variant: 'destructive',
       });
     }

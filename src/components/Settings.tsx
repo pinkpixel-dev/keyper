@@ -9,7 +9,7 @@ import { Badge} from '@/components/ui/badge';
 import { Separator} from '@/components/ui/separator';
 // Imported as raw text so the SQL users copy from Settings is byte-for-byte the
 // script in the repo, rather than a duplicate that can fall out of date.
-import supabaseSetupSql from '../../supabase-setup.sql?raw';
+import supabaseSetupSql from '../../sql/supabase-setup.sql?raw';
 import {
  Settings as SettingsIcon,
  Database,
@@ -49,7 +49,7 @@ import {
  SUPABASE_KEY_KEY,
  SUPABASE_USERNAME_KEY
 } from '@/integrations/supabase/client';
-import neonSetupSqlScript from '/neon-setup.sql?raw';
+import neonSetupSqlScript from '/sql/neon-setup.sql?raw';
 
 interface SettingsProps {
  onConfigurationComplete?: () => void;
@@ -235,7 +235,7 @@ export const Settings: React.FC<SettingsProps> = ({ onConfigurationComplete}) =>
 };
 
   // The setup SQL shown here is read straight from the shipped
-  // supabase-setup.sql at build time. It used to be a second copy pasted into
+  // sql/supabase-setup.sql at build time. It used to be a second copy pasted into
   // this component, which drifted: the file was fixed while the copy users
   // actually paste into the SQL editor still created the old wide-open
   // policies. One source, no drift.

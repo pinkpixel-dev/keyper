@@ -3,7 +3,7 @@
 One-time database update for existing Keyper installs on **Supabase**.
 
 SQLite and Neon do not need this. Brand new installs should run
-`supabase-setup.sql` instead and skip this folder entirely.
+`sql/supabase-setup.sql` instead and skip this folder entirely.
 
 ## Run these in order
 
