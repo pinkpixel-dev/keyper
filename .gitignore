@@ -57,14 +57,4 @@ credentials-to-remove.txt
 .codex/
 
 # Other
-Docker-rebuild.md
-post.md
-sqlite.png
-Screenshot_TOFIX.png
-implementationsofar.md
-supabase_rls_fixes.md
-DOCKER.md
-ROADMAP.md
-NEON_PLAN.md
-email-received.txt
-RELEASE.md
+DOCS/
