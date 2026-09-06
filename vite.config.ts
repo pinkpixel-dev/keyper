@@ -25,22 +25,31 @@ export default defineConfig(({ mode }) => ({
         orientation: 'portrait',
         scope: '/',
         start_url: '/',
+        // Every entry must point at a file whose real pixel dimensions match
+        // its declared `sizes`. Chrome decodes each icon and silently skips
+        // any that disagree; if all of them are skipped it falls back to a
+        // generated letter tile instead of the Keyper logo. The files in
+        // public/icons are exported at exactly the sizes they are named for.
         icons: [
           {
-            src: 'favicon.png',
-            sizes: '48x48',
+            src: 'icons/64x64.png',
+            sizes: '64x64',
             type: 'image/png'
           },
           {
-            src: 'logo.png',
-            sizes: '192x192',
+            src: 'icons/128x128.png',
+            sizes: '128x128',
             type: 'image/png'
           },
           {
-            src: 'logo.png',
+            src: 'icons/256x256.png',
+            sizes: '256x256',
+            type: 'image/png'
+          },
+          {
+            src: 'icons/512x512.png',
             sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any maskable'
+            type: 'image/png'
           }
         ]
       },

@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🧹 Repository
 
+## [1.3.2] - September 06, 2026 - 🐢 **Correct PWA Icons**
+
+### 🐛 Fixes
+
+- **Fixed** The installed PWA showing a blank generated tile instead of the Keyper turtle. Every icon in the web app manifest declared a size that did not match the real file: `favicon.png` was listed as 48x48 and `logo.png` as both 192x192 and 512x512, while all three images are actually 500x500. Chrome decodes each icon and skips any whose real dimensions disagree with the declared size, so it skipped all of them and fell back to a letter tile. The manifest now points at `public/icons`, whose files are exported at exactly the sizes they are named for.
+- **Fixed** The same size mismatch on the browser tab favicon and the Apple touch icon in `index.html`.
+- **Removed** The `maskable` purpose from the 512x512 icon. The Keyper logo runs edge to edge on a transparent background, so an Android maskable crop cut off the key and the flippers. A dedicated maskable icon with a padded safe zone can be added later.
+
+### 🔒 Security
+
+- **Changed** Electron from `39.8.10` to `41.10.7`, clearing a high severity symlink path traversal in `extract-zip` and a high severity sandboxed iframe popup bypass. Neither reached users; both are build and desktop toolchain issues. There is no fix inside the 39.x line.
+- **Changed** `better-sqlite3` from `12.6.2` to `13.0.3`, which Electron 41 requires. Release 13 moved the addon to Node-API, so the native module no longer has to be recompiled for each Electron ABI.
+- **Changed** `@humanfs/node`, `@xmldom/xmldom`, `browserslist`, and `fast-uri` to patched versions. All four arrive through `eslint`, `electron-builder`, and `vite-plugin-pwa`, and none ship in the web bundle, the Docker image, or the npm package.
+- `npm audit` now reports zero vulnerabilities.
+
 ## [1.3.1] - 2026-08-09 - 🔑 **Cross-Runtime Vault Unlock**
 
 ### 🗄️ Database Settings
