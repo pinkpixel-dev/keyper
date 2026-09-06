@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover lets the page paint behind a phone's camera cutout
+         and rounded corners, which is what makes env(safe-area-inset-*) report
+         real values. Anything that would land under the cutout has to pad
+         itself with those insets. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Keyper - Secure Credential Management</title>
     <meta name="description" content="Keyper - Secure credential management application. Safely store and organize your API keys, passwords, secrets, tokens, and certificates." />
     <meta name="author" content="Pink Pixel" />

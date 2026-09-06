@@ -249,9 +249,10 @@ useEffect(() => {
  if (isUnlocked) {
  return (
  <div className={className}>
- {/* Auto-lock status bar */}
+ {/* Auto-lock status bar. It sits just below the header, which grows by the
+ safe-area inset on a phone with a camera cutout, so this offset grows too. */}
  {autoLockMs > 0 && (
- <div className="fixed top-20 right-4 z-40">
+ <div className="fixed top-[calc(5rem+env(safe-area-inset-top))] right-[max(1rem,env(safe-area-inset-right))] z-40">
  <Card className="w-64 bg-background/95 backdrop-blur-sm border-border/50">
  <CardContent className="p-3">
  <div className="flex items-center justify-between text-sm">

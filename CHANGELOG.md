@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🧹 Repository
 
+## [1.3.3] - September 06, 2026 - 📱 **Mobile Header Fixes**
+
+### 🐛 Fixes
+
+- **Fixed** The Settings button covering the Add Credential button. Settings was absolutely positioned in the top-right corner, directly over the header's own action row, so it overlapped Add Credential at every width below 2200px. On a phone it covered between 52% and 68% of the button, which meant tapping the middle of Add Credential opened Settings instead. Settings now sits in the header row alongside Refresh, Docs, and Add Credential.
+- **Fixed** The header running under a phone's camera cutout, which cut the Keyper wordmark in half. The header now pads itself by the top safe-area inset, and the viewport meta tag carries `viewport-fit=cover` so that inset reports a real value. The vault status panel is offset by the same amount so it stays below the header.
+- **Fixed** The header overflowing sideways on phones. At 320px it ran 108px past the edge of the screen and pushed the Settings button out of view entirely. The logo, wordmark, and button labels now scale down so the whole row fits from 320px up.
+
+### ♿ Accessibility
+
+- **Added** An explicit label on the Add Credential button. Its visible text shortens to "Add" on phones, which would otherwise change the name screen readers announce depending on screen width.
+
 ## [1.3.2] - September 06, 2026 - 🐢 **Correct PWA Icons**
 
 ### 🐛 Fixes

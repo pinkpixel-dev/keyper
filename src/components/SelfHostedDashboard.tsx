@@ -3,7 +3,7 @@ import type { User} from '@supabase/supabase-js';
 import { getSupabaseCredentials, hasConfiguredDatabase, getCurrentUsername, supabase, refreshSupabaseClient} from '@/integrations/supabase/client';
 import { getOwnerId, ownerColumn, getCurrentUser} from '@/integrations/supabase/auth';
 import { Button} from '@/components/ui/button';
-import { Settings as SettingsIcon, ArrowLeft, Plus, Shield, RefreshCw, Database, Lock} from 'lucide-react';
+import { ArrowLeft, Plus, Shield, RefreshCw, Database, Lock} from 'lucide-react';
 import { useToast} from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import PassphraseGate from '@/components/PassphraseGate';
@@ -380,19 +380,6 @@ export const SelfHostedDashboard: React.FC = () => {
  onDatabaseError={handleDatabaseError}
  >
  <div className="min-h-screen bg-dot-pattern text-foreground">
- {/* Settings Button in Header */}
- <div className="absolute top-4 right-4 z-10">
- <Button
- variant="outline"
- size="sm"
- onClick={handleShowDashboardSettings}
- className="flex items-center gap-2"
- >
- <SettingsIcon className="h-4 w-4" />
- Settings
- </Button>
- </div>
-
  {/* Main Dashboard */}
  <div className="min-h-screen bg-dot-pattern text-foreground">
  <Suspense fallback={<div className="h-20 bg-card/50 animate-pulse" />}>
@@ -400,6 +387,7 @@ export const SelfHostedDashboard: React.FC = () => {
  user={sessionUser ?? createLocalUser()}
  onAddCredential={() => setIsAddModalOpen(true)}
  onRefresh={handleRefresh}
+ onOpenSettings={handleShowDashboardSettings}
  />
  </Suspense>
 

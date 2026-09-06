@@ -28,11 +28,9 @@
  *   KEYPER_SHOT_DPR   pixel density       (default 2, mobile crop only)
  *   KEYPER_SHOT_LIST_H  list-view CSS height (default 1620)
  *
- * The desktop width defaults to 2560 for a reason beyond fitting five columns:
- * below roughly 2200px the floating Settings button overlaps the header's Add
- * Credential button, which looks like a rendering fault in a marketing shot.
- * That overlap is a real layout bug in the app rather than a capture artifact,
- * so this default sidesteps it rather than fixing it here.
+ * The desktop width defaults to 2560 because that is where the credential grid
+ * reaches its full five columns, which fills the frame. Narrower widths render
+ * correctly, they just show fewer columns.
  */
 
 import { chromium } from 'playwright';
