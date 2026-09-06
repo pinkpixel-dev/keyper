@@ -14,7 +14,7 @@ export default defineConfig({
 				alt: 'Keyper',
 			},
 			favicon: '/favicon.png',
-			customCss: ['./src/styles/keyper-theme.css'],
+			customCss: ['./src/styles/keyper-theme.css', './src/styles/home.css'],
 			components: {
 				Head: './src/components/Head.astro',
 			},

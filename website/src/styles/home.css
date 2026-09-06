@@ -1,0 +1,187 @@
+/* Homepage-only styles.
+   Everything here is scoped under a .kp- prefix and only used by the splash
+   page at src/content/docs/index.mdx, so this file loads on every route but
+   cannot affect the docs pages. Colours come from Starlight's own custom
+   properties, which keyper-theme.css redefines for light mode, so each rule
+   below works in both themes without a second definition. */
+
+/* ── Hero ───────────────────────────────────────────────────────────────── */
+
+/* The splash hero centres its text by default. Left-align it so the page has
+   a single reading axis shared with everything below it. */
+.hero {
+	text-align: start;
+}
+
+.hero > img,
+.hero > .hero-html {
+	/* The logo is decoration next to the headline, not the subject of the
+	   page. The screenshot below is the subject. */
+	max-width: min(24rem, 100%);
+	margin-inline: 0 auto;
+}
+
+.hero .actions {
+	justify-content: flex-start;
+}
+
+@media (max-width: 50rem) {
+	.hero {
+		text-align: center;
+	}
+
+	.hero > img,
+	.hero > .hero-html {
+		margin-inline: auto;
+		max-width: 14rem;
+	}
+
+	.hero .actions {
+		justify-content: center;
+	}
+}
+
+/* ── Section rhythm ─────────────────────────────────────────────────────── */
+
+.kp-section {
+	margin-block-start: 5rem;
+}
+
+/* The section spacing is owned by .kp-section, so drop the heading's own top
+   margin rather than letting the two stack. */
+.kp-section > :first-child {
+	margin-block-start: 0;
+}
+
+/* These wrappers are divs, not paragraphs, because MDX turns their markdown
+   body into a <p> of its own and a nested paragraph is invalid HTML. Style the
+   generated paragraph rather than the wrapper. */
+.kp-section-lead {
+	max-width: 48ch;
+}
+
+.kp-section-lead p {
+	font-size: var(--sl-text-body);
+	color: var(--sl-color-gray-2);
+	margin: 0;
+}
+
+/* ── Product shot ───────────────────────────────────────────────────────── */
+
+.kp-shot {
+	margin-block-start: 3.5rem;
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: 0.75rem;
+	overflow: hidden;
+	/* A flat inset rather than a glow. Keeps the image from floating off a
+	   near-black page without adding decoration. */
+	background-color: var(--sl-color-gray-6);
+}
+
+.kp-shot img {
+	display: block;
+	width: 100%;
+	height: auto;
+}
+
+.kp-shot-caption {
+	margin-block-start: 0.75rem;
+	text-align: start;
+}
+
+.kp-shot-caption p {
+	font-size: var(--sl-text-xs);
+	color: var(--sl-color-gray-3);
+	margin: 0;
+}
+
+/* ── Editorial three-up ─────────────────────────────────────────────────── */
+
+/* Deliberately not cards. Each column is plain text under a hairline rule, so
+   the section reads as prose in columns instead of a feature-tile grid. */
+.kp-points {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 2.5rem;
+	margin-block-start: 2.5rem;
+}
+
+/* Starlight spaces adjacent markdown siblings with a top margin. Inside a grid
+   that margin offsets each item within its own cell, so every item after the
+   first sits lower than the first. Reset it on the direct children of both
+   grids on this page. */
+.kp-points > .kp-point,
+.kp-runtimes > li {
+	margin-block-start: 0;
+}
+
+.kp-point {
+	border-block-start: 1px solid var(--sl-color-gray-5);
+	padding-block-start: 1.25rem;
+}
+
+.kp-point h3 {
+	font-size: var(--sl-text-base);
+	font-weight: 600;
+	color: var(--sl-color-white);
+	/* Starlight gives content headings a large top margin. The hairline rule
+	   above already provides the separation, so remove it here. */
+	margin: 0 0 0.5rem;
+	line-height: 1.3;
+}
+
+.kp-point p {
+	font-size: var(--sl-text-sm);
+	line-height: 1.6;
+	color: var(--sl-color-gray-2);
+	margin: 0;
+}
+
+.kp-point code {
+	font-size: 0.9em;
+}
+
+@media (max-width: 60rem) {
+	.kp-points {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 2rem;
+	}
+}
+
+@media (max-width: 40rem) {
+	.kp-points {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 1.75rem;
+	}
+}
+
+/* ── Runtime list ───────────────────────────────────────────────────────── */
+
+.kp-runtimes {
+	list-style: none;
+	padding: 0;
+	margin-block-start: 2rem;
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+	gap: 0;
+	border-block-start: 1px solid var(--sl-color-gray-5);
+}
+
+.kp-runtimes li {
+	padding: 1.25rem 1.5rem 1.25rem 0;
+	border-block-end: 1px solid var(--sl-color-gray-5);
+}
+
+.kp-runtimes strong {
+	display: block;
+	color: var(--sl-color-white);
+	font-weight: 600;
+	font-size: var(--sl-text-sm);
+	margin-block-end: 0.25rem;
+}
+
+.kp-runtimes span {
+	font-size: var(--sl-text-xs);
+	color: var(--sl-color-gray-3);
+	line-height: 1.5;
+}

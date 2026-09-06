@@ -17,6 +17,13 @@
   --sl-color-bg: #080808;
 }
 
+/* Starlight defaults the site title to the accent colour, which reads as cyan
+   against the dark header. Use the plain text colour instead. --sl-color-white
+   flips to black under [data-theme='light'], so this stays legible in both. */
+.site-title {
+  color: var(--sl-color-white);
+}
+
 html {
   background-color: var(--sl-color-bg);
   background-image: radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px);

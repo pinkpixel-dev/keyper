@@ -1,57 +1,145 @@
 ---
 title: Keyper Documentation
-description: Deep technical and operational documentation for Keyper self-hosted credential management.
+description: Official documentation for Keyper, a self-hosted credential manager with client-side encryption and your choice of Supabase, Neon, or SQLite storage.
 template: splash
 hero:
-  tagline: Secure, self-hosted credential management with browser-side encryption.
+  title: Keyper
+  tagline: A self-hosted credential manager for API keys, passwords, and secrets. Values are encrypted in your browser, and they are stored in a database you own.
   image:
     file: ../../assets/logo.png
   actions:
-    - text: Start Here
-      link: /getting-started/overview/
-      icon: right-arrow
-      variant: minimal
-    - text: Source Repository
-      link: https://github.com/pinkpixel-dev/keyper
-      icon: external
-      variant: minimal
-    - text: Open Web App
+    - text: Open the web app
       link: https://app.keyper.icu
       icon: external
+      variant: primary
+    - text: Get started
+      link: /getting-started/overview/
+      icon: right-arrow
+      variant: secondary
+    - text: GitHub
+      link: https://github.com/pinkpixel-dev/keyper
+      icon: github
+      variant: minimal
 ---
 
-import { Card, CardGrid } from "@astrojs/starlight/components";
+{/* Content inside a JSX block stays unindented on purpose. MDX parses it as
+    markdown, so four spaces of indentation would become a code block, and
+    wrapping it in a <p> would nest one paragraph inside another. Let the
+    markdown produce the paragraph and style it from home.css instead. */}
 
-## Documentation Scope
+import { LinkCard, CardGrid } from "@astrojs/starlight/components";
 
-<CardGrid stagger>
-  <Card title="Architecture" icon="seti:graph">
-    Understand runtime flow from `main.tsx` through vault gating and credential
-    CRUD.
-  </Card>
-  <Card title="Security Model" icon="seti:shield">
-    See how Keyper combines bcrypt passphrase verification with DEK-based
-    AES-GCM.
-  </Card>
-  <Card title="Data Model" icon="seti:database">
-    Review `credentials`, `vault_config`, and `categories` schema and RLS
-    strategy.
-  </Card>
-  <Card title="Deploy and Operate" icon="seti:cloud">
-    Self-host via Docker or the npm CLI, or use the currently published Linux
-    desktop installers. Electron packaging support also exists for other
-    platforms from source.
-  </Card>
-  <Card title="Open Keyper" icon="seti:globe">
-    Use the hosted web app at{" "}
-    <a href="https://app.keyper.icu" target="_blank" rel="noreferrer">
-      app.keyper.icu
-    </a>
-    .
-  </Card>
-  <Card title="Source Map" icon="seti:search">
-    Jump directly to implementation files for crypto, storage, UI, and
-    deployment behavior.
-  </Card>
+{/* Both images come from `npm run screenshots`, which builds a throwaway demo
+    vault and captures it. Do not hand-edit them. The full dashboard is
+    unreadable at phone width, so small screens get a crop of three cards
+    instead of the whole grid shrunk down. */}
 
+<div class="kp-shot">
+<picture>
+<source media="(max-width: 40rem)" srcset="/screenshots/demo-dashboard-mobile.png" width="764" height="1722" />
+<img
+src="/screenshots/demo-dashboard.png"
+alt="The Keyper dashboard showing saved credentials grouped into cards, with a search field, category and type filters, a tag list, and a vault status panel reading Vault Unlocked."
+width="2560"
+height="1200"
+loading="eager"
+/>
+</picture>
+</div>
+
+<div class="kp-shot-caption">
+A demo vault with an unlocked session. Secret values stay hidden until you reveal them.
+</div>
+
+<div class="kp-section">
+
+## How it works
+
+<div class="kp-section-lead">
+Three things separate Keyper from a hosted password manager.
+</div>
+
+<div class="kp-points">
+<div class="kp-point">
+<h3>Encrypted before it leaves the browser</h3>
+
+Secret values are encrypted with AES-GCM on your device. Your master passphrase
+unwraps the key that decrypts them, and it never travels to the database.
+Titles, usernames, URLs, notes, and tags are stored as regular text so that
+search and sorting work.
+</div>
+
+<div class="kp-point">
+<h3>Your database, not mine</h3>
+
+Point Keyper at your own Supabase project, a Neon Postgres database, or a local
+SQLite file. You pick which one in the app's settings. There is no Keyper server
+in the middle holding your rows.
+</div>
+
+<div class="kp-point">
+<h3>Two locks, not one</h3>
+
+Signing in decides whether the database returns your rows at all. Unlocking the
+vault decides whether you can read them. On Supabase those are separate
+accounts, with the separation enforced by the database.
+</div>
+</div>
+
+</div>
+
+<div class="kp-section">
+
+## Run it where you want
+
+<div class="kp-section-lead">
+The same app ships four ways. All of them talk to the database you configured.
+</div>
+
+<ul class="kp-runtimes">
+<li><strong>Hosted web app</strong><span>Use app.keyper.icu and point it at your own database.</span></li>
+<li><strong>Installable PWA</strong><span>Install from the browser for an app window and an icon.</span></li>
+<li><strong>Docker</strong><span>An nginx image you can run on your own hardware or NAS.</span></li>
+<li><strong>Desktop</strong><span>Windows installer, Linux AppImage, and .deb packages.</span></li>
+</ul>
+
+</div>
+
+<div class="kp-section">
+
+## Start reading
+
+<CardGrid>
+  <LinkCard
+    title="Overview"
+    href="/getting-started/overview/"
+    description="What Keyper is, how the app is put together, and which credential types it handles."
+  />
+  <LinkCard
+    title="Install and run"
+    href="/getting-started/install-and-run/"
+    description="Desktop downloads, the npm CLI, and running the Docker image yourself."
+  />
+  <LinkCard
+    title="Security model"
+    href="/security/security-model/"
+    description="What the two locks protect, what is encrypted, and what is deliberately not."
+  />
+  <LinkCard
+    title="Cryptography"
+    href="/security/cryptography/"
+    description="Key derivation with Argon2id or PBKDF2, and AES-GCM for credential values."
+  />
+  <LinkCard
+    title="Self-hosting"
+    href="/operations/self-hosting/"
+    description="Standing the app up on your own infrastructure, including Docker and nginx."
+  />
+  <LinkCard
+    title="Troubleshooting"
+    href="/operations/troubleshooting/"
+    description="Connection failures, unlock problems, and the fixes for the common ones."
+  />
 </CardGrid>
+
+</div>

@@ -17,4 +17,4 @@ Live app: [app.keyper.icu](https://app.keyper.icu)
 
 ![Keyper Screenshot 5](/screenshots/screenshot5.png)
 
-![Keyper Screenshot 6](/screenshots/screenshot6.png)
+![The Keyper dashboard in list view, showing one row per credential with its category, tags, and last-updated date](/screenshots/demo-dashboard-list.png)

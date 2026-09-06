@@ -19,8 +19,7 @@
 
 _A secure, self-hosted credential management application for storing and organizing your digital credentials with complete privacy and control._
 
-![Keyper Screenshot](./screenshots/screenshot-dashboard.png)
-![Keyper Screenshot Light Mode](./screenshots/screenshot-dashboard-light.png)
+![The Keyper dashboard with an unlocked vault, showing credential cards with their type, category, tags, and priority](./screenshots/demo-dashboard.png)
 
 [🚀 Quick Start](#-quick-start) • [🖼️ Screenshots](#️-screenshots) • [📦 Installation](#-installation) • [🗄️ Setup](#️-database-setup) • [📱 PWA](#-progressive-web-app) • [🔧 Troubleshooting](#-troubleshooting)
 
@@ -58,7 +57,7 @@ Scroll down to see other installation options.
 
 ![Keyper Screenshot 5](./screenshots/screenshot5.png)
 
-![Keyper Screenshot 6](./screenshots/screenshot6.png)
+![The same vault in list view, showing one row per credential with its category, tags, and last-updated date](./screenshots/demo-dashboard-list.png)
 
 ---
 
