@@ -241,11 +241,13 @@ Run Keyper as a native desktop app on **Windows or Linux**!
 
 | Platform              | Package              | Download                                                                                             |
 | --------------------- | -------------------- | ---------------------------------------------------------------------------------------------------- |
-| Windows               | NSIS installer       | [Keyper.Setup.v1.2.2-win-x64.exe](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper%20Setup%20v1.2.2-win-x64.exe) |
-| Linux                 | AppImage (ARM64)     | [Keyper-1.2.2-arm64.AppImage](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper-1.2.2-arm64.AppImage)   |
-| Linux                 | AppImage (AMD64)     | [Keyper-1.2.2-x86_64.AppImage](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper-1.2.2-x86_64.AppImage)   |
-| Linux (Debian/Ubuntu) | `.deb` (x86_64)      | [keyper_1.2.2_amd64.deb](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/keyper_1.2.2_amd64.deb) |
-| Linux (Debian/Ubuntu) | `.deb` (ARM64)       | [keyper_1.2.2_arm64.deb](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/keyper_1.2.2_arm64.deb) |
+| Windows               | NSIS installer       | [Keyper.Setup.v1.3.3-win-x64.exe](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper.Setup.v1.3.3-win-x64.exe) |
+| Linux                 | AppImage (ARM64)     | [Keyper-1.3.3-arm64.AppImage](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper-1.3.3-arm64.AppImage)   |
+| Linux                 | AppImage (AMD64)     | [Keyper-1.3.3-x86_64.AppImage](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/Keyper-1.3.3-x86_64.AppImage)   |
+| Linux (Debian/Ubuntu) | `.deb` (x86_64)      | [keyper_1.3.3_amd64.deb](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/keyper_1.3.3_amd64.deb) |
+| Linux (Debian/Ubuntu) | `.deb` (ARM64)       | [keyper_1.3.3_arm64.deb](https://pub-da847cd0fc1045b3a5a7fcc39a3be134.r2.dev/keyper_1.3.3_arm64.deb) |
+
+Older versions are on the [GitHub releases page](https://github.com/pinkpixel-dev/keyper/releases).
 
 #### Preview (no packaging)
 

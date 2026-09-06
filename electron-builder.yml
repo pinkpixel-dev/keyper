@@ -107,6 +107,15 @@ win:
   icon: public/icon.ico
 
 nsis:
+  # Without this, the installer falls back to electron-builder's default name
+  # and the published filename ends up being whatever it gets renamed to on
+  # upload. That drifted between releases: 1.2.2 shipped as
+  # "Keyper Setup v1.2.2-win-x64.exe" while 1.3.1 shipped as
+  # "Keyper.Setup.v1.3.1-win-x64.exe", which left a dead download link on the
+  # website. Pin the name so it matches the documented URL every time.
+  # ${arch} renders as "x64" for an exe (only AppImage/rpm use x86_64 and
+  # deb/snap use amd64), so this produces Keyper.Setup.v1.3.3-win-x64.exe.
+  artifactName: "Keyper.Setup.v${version}-win-${arch}.${ext}"
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
