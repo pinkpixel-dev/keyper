@@ -124,7 +124,7 @@
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
-    "lucide-react": "^0.575.0",
+    "lucide-react": "^1.41.0",
     "next-themes": "^0.4.6",
     "node-abi": "^4.31.0",
     "react": "^19.2.4",
