@@ -180,6 +180,6 @@
     "electron@41.10.7": true,
     "esbuild@0.28.1": true,
     "electron-winstaller@5.4.0": true,
-    "workerd@1.20260801.1": true
+    "workerd@1.20260918.1": true
   }
 }
